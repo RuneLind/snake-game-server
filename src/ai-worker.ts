@@ -31,12 +31,24 @@ self.onmessage = (event: MessageEvent) => {
     const fn = new Function("state", HELPERS + sanitized + "\nreturn move(state);");
     const result = fn(safeInput);
 
+    // Accept a number (angle in radians)
     if (typeof result === "number" && isFinite(result)) {
-      self.postMessage({ targetAngle: result });
-    } else {
-      self.postMessage({ targetAngle: null });
+      self.postMessage({ targetAngle: result, error: null });
+      return;
     }
-  } catch {
-    self.postMessage({ targetAngle: null });
+
+    // Accept {x, y} target point — convert to angle from snake head
+    if (result && typeof result === "object" && typeof result.x === "number" && typeof result.y === "number") {
+      const angle = Math.atan2(result.y - input.you.y, result.x - input.you.x);
+      self.postMessage({ targetAngle: angle, error: null });
+      return;
+    }
+
+    // Invalid return value
+    const got = result === null ? "null" : typeof result === "object" ? JSON.stringify(result).slice(0, 50) : String(result);
+    self.postMessage({ targetAngle: null, error: `Invalid return: ${got}. Return a number (angle) or {x, y} (target point).` });
+  } catch (e: any) {
+    const msg = e?.message ?? String(e);
+    self.postMessage({ targetAngle: null, error: msg.slice(0, 200) });
   }
 };

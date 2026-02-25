@@ -19,13 +19,15 @@ export interface Snake {
   trail: Position[];    // trail[0] = most recent head position
   segmentCount: number; // how many visible segments
 
-  // Scoring (score = length, like Slither.io)
+  // Stats
   kills: number;
   totalKills: number;
+  deaths: number;
   bestLength: number;  // peak length this session (high score)
 
   // AI
   aiFunction: string;
+  lastAIError?: string;  // last error from AI function execution
 
   // Death
   diedAt?: number;

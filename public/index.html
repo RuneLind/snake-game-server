@@ -82,6 +82,15 @@
     margin-left: 8px;
   }
   .snake-status { margin-left: 8px; font-size: 14px; }
+  .snake-error {
+    font-size: 10px;
+    color: #e74c3c;
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+  }
   #admin-panel {
     padding: 12px;
     border-bottom: 1px solid #333;
@@ -406,9 +415,10 @@ function updateLeaderboard() {
         <div class="snake-name">${escapeHtml(s.participantName)}</div>
         <div class="snake-stats">
           ${s.alive ? `Now: ${current}` : 'Dead'}${best > 0 ? ` \u00b7 Best: ${best}` : ''}
-          ${s.totalKills ? ` \u00b7 ${s.totalKills} kill${s.totalKills !== 1 ? 's' : ''}` : ''}
+          ${s.totalKills ? ` \u00b7 \u{1F52B}${s.totalKills}` : ''}${s.deaths ? ` \u00b7 \u{1F480}${s.deaths}` : ''}
           ${!s.alive && s.deathReason ? ' \u00b7 ' + formatDeathReason(s.deathReason) : ''}
         </div>
+        ${s.lastAIError ? `<div class="snake-error">\u26a0 ${escapeHtml(s.lastAIError)}</div>` : ''}
       </div>
       <div class="snake-score" style="color: ${s.color}">${displayScore}</div>
       <div class="snake-status">${s.alive ? '\u{1F7E2}' : '\u{1F480}'}</div>

@@ -72,6 +72,7 @@ export function registerSnake(name: string, aiFunction: string): Snake {
     segmentCount: config.startingSegments,
     kills: 0,
     totalKills: 0,
+    deaths: 0,
     bestLength: 0,
     aiFunction,
   };
@@ -96,6 +97,7 @@ function respawnSnake(snake: Snake) {
   snake.diedAt = undefined;
   snake.deathReason = undefined;
   snake.respawnAt = undefined;
+  snake.lastAIError = undefined;
 }
 
 export function updateSnakeAI(snakeId: string, aiFunction: string): Snake | null {
@@ -119,7 +121,9 @@ export function removeSnake(snakeId: string): boolean {
 // --- Food ---
 
 function ensureMinFood() {
-  while (gameState.food.length < config.minFood) {
+  const target = config.minFood + gameState.snakes.length * 20;
+  const cap = config.maxFood;
+  while (gameState.food.length < Math.min(target, cap)) {
     gameState.food.push(spawnFood());
   }
 }
@@ -189,13 +193,16 @@ async function executeTick() {
     aiFunction: s.aiFunction,
     input: buildAIInput(s),
   }));
-  const targetAngles = await runAllAIs(aiInputs);
+  const aiResults = await runAllAIs(aiInputs);
 
-  // 3. Turn toward target angle
+  // 3. Turn toward target angle + track errors
   for (const snake of aliveSnakes) {
-    const target = targetAngles.get(snake.id);
-    if (target !== null && target !== undefined) {
-      snake.angle = turnToward(snake.angle, normalizeAngle(target), config.maxTurnRate);
+    const result = aiResults.get(snake.id);
+    if (result) {
+      snake.lastAIError = result.error ?? undefined;
+      if (result.targetAngle !== null) {
+        snake.angle = turnToward(snake.angle, normalizeAngle(result.targetAngle), config.maxTurnRate);
+      }
     }
   }
 
@@ -283,6 +290,7 @@ async function executeTick() {
   for (const snakeId of deadThisTick) {
     const snake = gameState.snakes.find(s => s.id === snakeId)!;
     snake.alive = false;
+    snake.deaths++;
     snake.diedAt = gameState.tick;
 
     if (config.respawnOnDeath) {
@@ -365,7 +373,9 @@ function broadcastState() {
         bestLength: s.bestLength,
         kills: s.kills,
         totalKills: s.totalKills,
+        deaths: s.deaths,
         deathReason: s.deathReason,
+        lastAIError: s.lastAIError,
       };
     }),
     food: gameState.food.map(f => ({
@@ -420,6 +430,7 @@ export function resetGame() {
   for (const snake of snakes) {
     snake.kills = 0;
     snake.totalKills = 0;
+    snake.deaths = 0;
     snake.bestLength = 0;
     snake.alive = false;
     snake.diedAt = undefined;

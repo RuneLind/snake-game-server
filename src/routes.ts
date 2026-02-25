@@ -81,11 +81,12 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   }, async () => {
     return {
-      description: "Submit a JavaScript function named 'move' that controls your snake. Returns a target angle in radians.",
-      signature: "function move(state) { return angleInRadians; }",
+      description: "Submit a JavaScript function named 'move' that controls your snake. Return a target point {x, y} or an angle in radians.",
+      signature: "function move(state) { return { x, y }; }  // or return angleInRadians;",
       returnValue: {
-        type: "number",
-        description: "Target angle in radians. 0 = right, PI/2 = down, PI = left, 3*PI/2 = up. The snake turns toward this angle at its max turn rate.",
+        option1: "{ x, y } — a target point to move toward (easiest!)",
+        option2: "number — a target angle in radians (advanced: 0=right, PI/2=down, PI=left)",
+        description: "The snake turns toward the target at ~14 degrees per tick. Errors are shown on the leaderboard.",
       },
       state: {
         you: {
@@ -110,23 +111,23 @@ export async function registerRoutes(app: FastifyInstance) {
         "distFromCenter(x, y)": "Returns distance from arena center (0,0)",
       },
       rules: [
-        "Function must return a number (angle in radians)",
+        "Return { x, y } (target point) or a number (angle in radians)",
         "Max execution time: 50ms (exceeded = snake continues straight)",
-        "Invalid return or error = snake continues straight",
-        "Snake turns toward target angle at max ~4.6 degrees per tick",
+        "Errors are shown on the leaderboard — check there if your snake goes straight",
+        "Snake turns toward target at ~14 degrees per tick",
         "State object is a deep copy — mutations have no effect",
         "No self-collision — you only die from hitting other snakes or the boundary",
       ],
       example: `function move(state) {
-  const { x, y, angle } = state.you;
+  const { x, y } = state.you;
   const arena = state.arena;
 
-  // If too close to boundary, turn toward center
+  // Stay away from the boundary — head toward center
   if (distFromCenter(x, y) > arena.radius * 0.8) {
-    return angleTo(x, y, 0, 0);
+    return { x: 0, y: 0 };
   }
 
-  // Find nearest food
+  // Find nearest food and go to it
   let nearest = null;
   let nearestDist = Infinity;
   for (const f of state.food) {
@@ -138,10 +139,10 @@ export async function registerRoutes(app: FastifyInstance) {
   }
 
   if (nearest) {
-    return angleTo(x, y, nearest.x, nearest.y);
+    return { x: nearest.x, y: nearest.y };
   }
 
-  return angle; // continue straight
+  return { x: 0, y: 0 }; // head to center
 }`,
     };
   });

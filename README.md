@@ -61,37 +61,39 @@ function move(state) {
   // state.food   — [{ x, y, value }]
   // state.tick   — current tick number
   //
-  // Return: a number (target angle in radians)
-  //   0 = right, PI/2 = down, PI = left, 3*PI/2 = up
+  // Return EITHER:
+  //   { x, y }  — a target point to move toward (easiest!)
+  //   number    — a target angle in radians (advanced)
   //
   // Helper functions available:
   //   angleTo(x1, y1, x2, y2) — angle from point 1 to point 2
   //   distTo(x1, y1, x2, y2) — distance between two points
   //   distFromCenter(x, y)   — distance from arena center
 
-  return 0; // go right
+  return { x: 0, y: 0 }; // head to center
 }
 ```
 
 ### Rules
+- Return `{ x, y }` (target point) or a `number` (angle in radians)
 - 50ms execution limit (exceeded = go straight)
-- Snake turns toward target angle at ~4.6 degrees per tick
+- Snake turns toward target at ~14 degrees per tick
 - No self-collision (only die from other snakes or boundary)
-- Errors caught silently — snake goes straight
+- Errors shown on the leaderboard — check there if your snake goes straight
 - State is a deep copy — mutations have no effect
 
 ### Starter AI
 
 ```javascript
 function move(state) {
-  const { x, y, angle } = state.you;
+  const { x, y } = state.you;
 
   // Stay away from boundary
   if (distFromCenter(x, y) > state.arena.radius * 0.8) {
-    return angleTo(x, y, 0, 0);
+    return { x: 0, y: 0 };
   }
 
-  // Find nearest food
+  // Find nearest food and go to it
   let nearest = null;
   let nearestDist = Infinity;
   for (const f of state.food) {
@@ -102,8 +104,8 @@ function move(state) {
     }
   }
 
-  if (nearest) return angleTo(x, y, nearest.x, nearest.y);
-  return angle;
+  if (nearest) return { x: nearest.x, y: nearest.y };
+  return { x: 0, y: 0 };
 }
 ```
 
