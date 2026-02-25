@@ -401,7 +401,8 @@ function broadcastState() {
         deaths: s.deaths,
         deathReason: s.deathReason,
         lastAIError: s.lastAIError,
-        submissions: s.submissions,
+        submissionCount: s.submissions.length,
+        latestLines: s.submissions.length > 0 ? s.submissions[s.submissions.length - 1].lines : 0,
       };
     }),
     food: gameState.food.map(f => ({

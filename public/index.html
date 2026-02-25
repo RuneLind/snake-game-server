@@ -519,15 +519,12 @@ const statsList = document.getElementById('stats-list');
 function updateStatsPanel() {
   if (!currentState) return;
   const sorted = [...currentState.snakes].sort((a, b) => {
-    const aSubs = a.submissions ? a.submissions.length : 0;
-    const bSubs = b.submissions ? b.submissions.length : 0;
-    return bSubs - aSubs;
+    return (b.submissionCount || 0) - (a.submissionCount || 0);
   });
 
   statsList.innerHTML = sorted.map(s => {
-    const subs = s.submissions || [];
-    const version = subs.length;
-    const lines = subs.length > 0 ? subs[subs.length - 1].lines : 0;
+    const version = s.submissionCount || 0;
+    const lines = s.latestLines || 0;
     return `
     <div class="stats-entry">
       <div class="stats-summary">
