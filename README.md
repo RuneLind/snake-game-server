@@ -12,6 +12,7 @@ bun run dev
 ```
 
 Open http://localhost:3000 on the big screen.
+Open http://localhost:3000/stats for detailed submission history.
 
 Find your local IP: `ipconfig getifaddr en0` (macOS)
 
@@ -34,6 +35,8 @@ curl -X POST http://HOST:3000/api/submit \
 ```
 
 **Debug state:** `GET http://HOST:3000/api/state`
+
+**Stats (persisted):** `GET http://HOST:3000/api/stats`
 
 **AI contract docs:** `GET http://HOST:3000/api/docs/ai-contract`
 
@@ -109,8 +112,29 @@ function move(state) {
 }
 ```
 
+## Display Layout
+
+The main page has a three-panel layout for 16:9 screens:
+
+- **Left panel (280px)** — Submissions board: each player's name, version count (v1, v2...), current line count, kills, and deaths
+- **Center** — Game canvas with the arena
+- **Right panel (320px)** — Leaderboard, admin controls, game status
+
+The `/stats` page shows full submission history per player with line diffs and timestamps.
+
+## Persistence
+
+Game state is saved to `data/state.json` automatically:
+- On every registration, AI submission, and death
+- Every 30 seconds while running
+
+On server restart, all snakes are restored with their AI code, stats, and submission history. The game starts in "waiting" status so you can press Start when ready.
+
+The `/stats` page and `/api/stats` endpoint read from this persisted file, so submission history survives server crashes.
+
 ## Session Flow
 
 1. Start with default speed while people get their first submission working
 2. Increase `snakeSpeed` or decrease `tickRateMs` once everyone has a moving snake
 3. Switch to tournament mode (`respawnOnDeath: false`) for the final round
+4. Open `/stats` on a second screen to track who's iterating
