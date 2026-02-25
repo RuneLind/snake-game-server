@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Snake AI Arena — Stats</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #eee;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 24px;
+  }
+  .subtitle a { color: #888; text-decoration: none; }
+  .subtitle a:hover { color: #bbb; }
+  #status-bar {
+    display: flex;
+    gap: 24px;
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 20px;
+    padding: 8px 12px;
+    background: #141414;
+    border-radius: 8px;
+  }
+  #players { display: flex; flex-direction: column; gap: 12px; }
+  .player-card {
+    background: #141414;
+    border-radius: 10px;
+    border: 1px solid #222;
+    overflow: hidden;
+  }
+  .player-header {
+    display: flex;
+    align-items: center;
+    padding: 14px 18px;
+    gap: 12px;
+  }
+  .player-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .player-name {
+    font-size: 16px;
+    font-weight: 700;
+    flex: 1;
+  }
+  .player-badges {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    color: #888;
+  }
+  .badge {
+    background: #1a1a1a;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 600;
+  }
+  .player-stats {
+    display: flex;
+    gap: 24px;
+    padding: 0 18px 12px;
+    font-size: 12px;
+    color: #666;
+  }
+  .stat-value { color: #aaa; font-weight: 600; }
+  .submission-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .submission-table th {
+    text-align: left;
+    padding: 6px 18px;
+    background: #111;
+    color: #555;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 10px;
+  }
+  .submission-table td {
+    padding: 6px 18px;
+    border-top: 1px solid #1a1a1a;
+    color: #999;
+  }
+  .submission-table tr:hover td { background: #181818; }
+  .version-tag {
+    display: inline-block;
+    background: #222;
+    color: #ccc;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .line-diff { font-size: 10px; margin-left: 4px; }
+  .line-diff.up { color: #2ecc71; }
+  .line-diff.down { color: #e74c3c; }
+  .line-diff.same { color: #555; }
+  #loading { color: #555; font-size: 14px; padding: 40px; text-align: center; }
+  #error { color: #e74c3c; font-size: 14px; padding: 40px; text-align: center; display: none; }
+</style>
+</head>
+<body>
+<h1>SNAKE AI ARENA</h1>
+<div class="subtitle">Submission History &mdash; <a href="/">Back to game</a></div>
+
+<div id="status-bar">
+  <span id="tick-display">Tick: —</span>
+  <span id="snake-count">— snakes</span>
+  <span id="update-status">Loading...</span>
+</div>
+
+<div id="loading">Loading stats...</div>
+<div id="error">Failed to load stats. Server may be down.</div>
+<div id="players"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const playersEl = document.getElementById('players');
+const loadingEl = document.getElementById('loading');
+const errorEl = document.getElementById('error');
+const tickDisplay = document.getElementById('tick-display');
+const snakeCountEl = document.getElementById('snake-count');
+const updateStatus = document.getElementById('update-status');
+
+let currentData = null;
+let usingLive = false;
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function renderStats(data) {
+  currentData = data;
+  loadingEl.style.display = 'none';
+  errorEl.style.display = 'none';
+
+  tickDisplay.textContent = `Tick: ${data.tick}`;
+  snakeCountEl.textContent = `${data.snakes.length} snake${data.snakes.length !== 1 ? 's' : ''}`;
+
+  const sorted = [...data.snakes].sort((a, b) => {
+    return (b.submissions?.length || 0) - (a.submissions?.length || 0);
+  });
+
+  playersEl.innerHTML = sorted.map(s => {
+    const subs = s.submissions || [];
+    const version = subs.length;
+    const latestLines = subs.length > 0 ? subs[subs.length - 1].lines : 0;
+
+    const rows = subs.map((sub, i) => {
+      const prev = i > 0 ? subs[i - 1].lines : 0;
+      const diff = i > 0 ? sub.lines - prev : 0;
+      const diffClass = diff > 0 ? 'up' : diff < 0 ? 'down' : 'same';
+      const diffStr = i === 0 ? '' : `<span class="line-diff ${diffClass}">${diff > 0 ? '+' : ''}${diff}</span>`;
+      return `<tr>
+        <td><span class="version-tag">v${i + 1}</span></td>
+        <td>${sub.lines} lines ${diffStr}</td>
+        <td>${formatTime(sub.timestamp)}</td>
+        <td>tick ${sub.tick}</td>
+      </tr>`;
+    }).reverse().join('');
+
+    return `
+    <div class="player-card">
+      <div class="player-header">
+        <div class="player-dot" style="background: ${s.color}"></div>
+        <div class="player-name">${escapeHtml(s.participantName)}</div>
+        <div class="player-badges">
+          <span class="badge">v${version}</span>
+          <span class="badge">${latestLines} lines</span>
+        </div>
+      </div>
+      <div class="player-stats">
+        <span>Kills: <span class="stat-value">${s.totalKills || 0}</span></span>
+        <span>Deaths: <span class="stat-value">${s.deaths || 0}</span></span>
+        <span>Best length: <span class="stat-value">${s.bestLength || 0}</span></span>
+      </div>
+      ${subs.length > 0 ? `
+      <table class="submission-table">
+        <thead><tr><th>Version</th><th>Lines</th><th>Time</th><th>Tick</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// Try live WebSocket updates
+try {
+  const socket = io();
+  socket.on('game:tick', (state) => {
+    if (state.snakes && state.snakes.length > 0 && state.snakes[0].submissions) {
+      usingLive = true;
+      updateStatus.textContent = 'Live';
+      updateStatus.style.color = '#2ecc71';
+      renderStats(state);
+    }
+  });
+  socket.on('connect', () => {
+    updateStatus.textContent = 'Connected';
+  });
+  socket.on('disconnect', () => {
+    updateStatus.textContent = 'Disconnected';
+    updateStatus.style.color = '#e74c3c';
+  });
+} catch (e) {
+  // Socket.io not available, fall back to API
+}
+
+// Also fetch from persisted API (works even if socket hasn't sent ticks yet)
+async function fetchStats() {
+  try {
+    const res = await fetch('/api/stats');
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    if (!usingLive && data.snakes && data.snakes.length > 0) {
+      updateStatus.textContent = 'From saved state';
+      updateStatus.style.color = '#f39c12';
+      renderStats(data);
+    }
+  } catch (e) {
+    if (!currentData) {
+      loadingEl.style.display = 'none';
+      errorEl.style.display = 'block';
+    }
+  }
+}
+
+fetchStats();
+</script>
+</body>
+</html>

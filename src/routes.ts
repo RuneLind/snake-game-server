@@ -19,7 +19,9 @@ import {
   pauseGame,
   resetGame,
   updateConfig,
+  getStateForPersistence,
 } from "./game.js";
+import { loadSavedState } from "./persistence.js";
 
 export async function registerRoutes(app: FastifyInstance) {
   app.setValidatorCompiler(validatorCompiler);
@@ -145,6 +147,29 @@ export async function registerRoutes(app: FastifyInstance) {
   return { x: 0, y: 0 }; // head to center
 }`,
     };
+  });
+
+  // --- Stats page ---
+
+  app.get("/stats", {
+    schema: { hide: true },
+  }, async (_request, reply) => {
+    return reply.sendFile("stats.html");
+  });
+
+  // --- Stats API (persisted, survives crashes) ---
+
+  app.get("/api/stats", {
+    schema: {
+      description: "Get persisted stats for all snakes (submissions, kills, deaths). Reads from saved state file so data survives server crashes.",
+      tags: ["docs"],
+    },
+  }, async () => {
+    // Try live state first, fall back to saved file
+    const live = getStateForPersistence();
+    if (live.snakes.length > 0) return live;
+    const saved = await loadSavedState();
+    return saved ?? { tick: 0, status: "waiting", snakes: [], food: [] };
   });
 
   // --- Admin routes ---

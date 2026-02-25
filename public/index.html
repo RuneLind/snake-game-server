@@ -43,16 +43,6 @@
     display: flex;
     align-items: center;
     padding: 8px 10px;
-    cursor: pointer;
-    user-select: none;
-  }
-  .stats-summary:hover { background: #222; }
-  .stats-toggle {
-    width: 20px;
-    font-size: 12px;
-    color: #666;
-    flex-shrink: 0;
-    text-align: center;
   }
   .stats-dot {
     width: 10px; height: 10px;
@@ -79,22 +69,8 @@
   .stats-meta {
     font-size: 10px;
     color: #666;
-    padding: 0 10px 6px 38px;
+    padding: 0 10px 6px 18px;
   }
-  .stats-history {
-    display: none;
-    padding: 0 10px 8px 38px;
-    font-size: 10px;
-    color: #555;
-  }
-  .stats-history.open { display: block; }
-  .stats-history-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 2px 0;
-    border-bottom: 1px solid #1e1e1e;
-  }
-  .stats-history-row:last-child { border-bottom: none; }
   #game-area {
     flex: 1;
     display: flex;
@@ -539,7 +515,6 @@ function updateLeaderboard() {
 }
 
 const statsList = document.getElementById('stats-list');
-const expandedPlayers = new Set();
 
 function updateStatsPanel() {
   if (!currentState) return;
@@ -553,38 +528,16 @@ function updateStatsPanel() {
     const subs = s.submissions || [];
     const version = subs.length;
     const lines = subs.length > 0 ? subs[subs.length - 1].lines : 0;
-    const expanded = expandedPlayers.has(s.id);
-    const historyRows = subs.map((sub, i) => {
-      const time = new Date(sub.timestamp);
-      const timeStr = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      return `<div class="stats-history-row">
-        <span>v${i + 1}</span>
-        <span>${sub.lines} lines</span>
-        <span>${timeStr}</span>
-      </div>`;
-    }).reverse().join('');
-
     return `
     <div class="stats-entry">
-      <div class="stats-summary" onclick="toggleStatsExpand('${s.id}')">
-        <span class="stats-toggle">${expanded ? '\u2212' : '+'}</span>
+      <div class="stats-summary">
         <span class="stats-dot" style="background: ${s.color}"></span>
         <span class="stats-name">${escapeHtml(s.participantName)}</span>
         <span class="stats-version">v${version}</span>
       </div>
       <div class="stats-meta">${lines} lines \u00b7 \u{1F52B}${s.totalKills || 0} \u00b7 \u{1F480}${s.deaths || 0}</div>
-      <div class="stats-history ${expanded ? 'open' : ''}">${historyRows || '<div style="color:#444">No submissions</div>'}</div>
     </div>`;
   }).join('');
-}
-
-function toggleStatsExpand(id) {
-  if (expandedPlayers.has(id)) {
-    expandedPlayers.delete(id);
-  } else {
-    expandedPlayers.add(id);
-  }
-  updateStatsPanel();
 }
 
 function formatDeathReason(reason) {
