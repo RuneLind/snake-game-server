@@ -82,6 +82,54 @@
     margin-left: 8px;
   }
   .snake-status { margin-left: 8px; font-size: 14px; }
+  #admin-panel {
+    padding: 12px;
+    border-bottom: 1px solid #333;
+  }
+  #admin-buttons {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .admin-btn {
+    flex: 1;
+    padding: 8px 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .admin-btn:active { transform: scale(0.96); }
+  .admin-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  #btn-start {
+    background: #2ecc71;
+    color: #000;
+  }
+  #btn-start:hover:not(:disabled) { background: #27ae60; }
+  #btn-start.pause {
+    background: #f39c12;
+  }
+  #btn-start.pause:hover:not(:disabled) { background: #d68910; }
+  #btn-reset {
+    background: #555;
+    color: #fff;
+  }
+  #btn-reset:hover:not(:disabled) { background: #666; }
+  #snake-count {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+  }
+  #leaderboard-header {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
   #overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -137,6 +185,14 @@
       <span id="status-info">Waiting</span>
       <span id="spectator-info">0 watching</span>
     </div>
+    <div id="admin-panel">
+      <div id="admin-buttons">
+        <button class="admin-btn" id="btn-start" onclick="toggleStartPause()">Start</button>
+        <button class="admin-btn" id="btn-reset" onclick="doReset()">Reset</button>
+      </div>
+      <div id="snake-count">0 snakes registered</div>
+    </div>
+    <div id="leaderboard-header">Leaderboard</div>
     <div id="leaderboard"></div>
   </div>
 </div>
@@ -332,18 +388,24 @@ function lightenColor(hex, amount) {
 
 function updateLeaderboard() {
   if (!currentState) return;
-  const sorted = [...currentState.snakes].sort((a, b) => b.totalScore - a.totalScore);
+  // Sort by: alive snakes by current length desc, then dead by bestLength desc
+  const sorted = [...currentState.snakes].sort((a, b) => {
+    if (a.alive !== b.alive) return a.alive ? -1 : 1;
+    if (a.alive) return b.length - a.length;
+    return b.bestLength - a.bestLength;
+  });
   leaderboard.innerHTML = sorted.map(s => `
     <div class="snake-row ${s.alive ? '' : 'dead'}">
       <div class="snake-color" style="background: ${s.color}"></div>
       <div class="snake-info">
         <div class="snake-name">${escapeHtml(s.participantName)}</div>
         <div class="snake-stats">
-          L:${s.length} K:${s.totalKills}
-          ${!s.alive && s.deathReason ? ' \u2620 ' + formatDeathReason(s.deathReason) : ''}
+          ${s.alive ? `Length: ${s.length}` : `Best: ${s.bestLength}`}
+          ${s.totalKills ? ` \u00b7 ${s.totalKills} kill${s.totalKills !== 1 ? 's' : ''}` : ''}
+          ${!s.alive && s.deathReason ? ' \u00b7 ' + formatDeathReason(s.deathReason) : ''}
         </div>
       </div>
-      <div class="snake-score" style="color: ${s.color}">${s.totalScore}</div>
+      <div class="snake-score" style="color: ${s.color}">${s.alive ? s.length : s.bestLength}</div>
       <div class="snake-status">${s.alive ? '\u{1F7E2}' : '\u{1F480}'}</div>
     </div>
   `).join('');
@@ -380,6 +442,35 @@ function addNotification(text, color = '#fff') {
   setTimeout(() => el.remove(), 3000);
 }
 
+// Admin controls
+const btnStart = document.getElementById('btn-start');
+const snakeCount = document.getElementById('snake-count');
+
+async function toggleStartPause() {
+  if (!currentState) return;
+  const endpoint = currentState.status === 'running' ? '/api/admin/pause' : '/api/admin/start';
+  btnStart.disabled = true;
+  try { await fetch(endpoint, { method: 'POST' }); } catch (e) { console.error(e); }
+  btnStart.disabled = false;
+}
+
+async function doReset() {
+  if (!confirm('Reset game? Scores will be cleared.')) return;
+  document.getElementById('btn-reset').disabled = true;
+  try { await fetch('/api/admin/reset', { method: 'POST' }); } catch (e) { console.error(e); }
+  document.getElementById('btn-reset').disabled = false;
+}
+
+function updateAdminPanel() {
+  if (!currentState) return;
+  const isRunning = currentState.status === 'running';
+  btnStart.textContent = isRunning ? 'Pause' : 'Start';
+  btnStart.className = 'admin-btn' + (isRunning ? ' pause' : '');
+  const total = currentState.snakes.length;
+  const alive = currentState.snakes.filter(s => s.alive).length;
+  snakeCount.textContent = `${total} snake${total !== 1 ? 's' : ''} registered, ${alive} alive`;
+}
+
 // Socket.io
 const socket = io();
 
@@ -393,6 +484,7 @@ socket.on('game:tick', (state) => {
   tickInfo.textContent = `Tick: ${state.tick}`;
   statusInfo.textContent = state.status.charAt(0).toUpperCase() + state.status.slice(1);
   spectatorInfo.textContent = `${state.spectatorCount} watching`;
+  updateAdminPanel();
   updateLeaderboard();
 });
 

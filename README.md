@@ -55,7 +55,7 @@ curl -X POST http://localhost:3000/api/admin/config \
 
 ```javascript
 function move(state) {
-  // state.you    — { id, x, y, angle, speed, segments, length, score }
+  // state.you    — { id, x, y, angle, speed, segments, length }
   // state.arena  — { radius } (circular arena centered at 0,0)
   // state.snakes — [{ id, name, x, y, angle, segments, length, alive }]
   // state.food   — [{ x, y, value }]

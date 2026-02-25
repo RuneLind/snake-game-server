@@ -70,10 +70,9 @@ export function registerSnake(name: string, aiFunction: string): Snake {
     speed: config.snakeSpeed,
     trail: [],
     segmentCount: config.startingSegments,
-    score: 0,
-    totalScore: 0,
     kills: 0,
     totalKills: 0,
+    bestLength: 0,
     aiFunction,
   };
   gameState.snakes.push(snake);
@@ -93,7 +92,6 @@ function respawnSnake(snake: Snake) {
   snake.trail = buildInitialTrail(spawn.x, spawn.y, spawn.angle);
   snake.segmentCount = config.startingSegments;
   snake.alive = true;
-  snake.score = 0;
   snake.kills = 0;
   snake.diedAt = undefined;
   snake.deathReason = undefined;
@@ -139,7 +137,6 @@ function buildAIInput(snake: Snake): AIInput {
       speed: snake.speed,
       segments,
       length: snake.segmentCount,
-      score: snake.score,
     },
     arena: {
       radius: config.arenaRadius,
@@ -226,8 +223,9 @@ async function executeTick() {
       if (distSq(snake.headX, snake.headY, food.x, food.y) < eatThresholdSq) {
         eatenIndices.add(i);
         snake.segmentCount += food.value;
-        snake.score += food.value * 10;
-        snake.totalScore += food.value * 10;
+        if (snake.segmentCount > snake.bestLength) {
+          snake.bestLength = snake.segmentCount;
+        }
       }
     }
   }
@@ -315,15 +313,7 @@ async function executeTick() {
     if (killer) {
       killer.kills++;
       killer.totalKills++;
-      killer.score += 100;
-      killer.totalScore += 100;
     }
-  }
-
-  // Survival points
-  for (const snake of gameState.snakes.filter(s => s.alive)) {
-    snake.score += 1;
-    snake.totalScore += 1;
   }
 
   // 10. Ensure min food + replace eaten
@@ -334,8 +324,6 @@ async function executeTick() {
     const alive = gameState.snakes.filter(s => s.alive);
     if (alive.length <= 1 && gameState.snakes.length > 1) {
       if (alive.length === 1) {
-        alive[0].score += 500;
-        alive[0].totalScore += 500;
         gameState.winnerId = alive[0].id;
       }
       gameState.status = "finished";
@@ -374,8 +362,7 @@ function broadcastState() {
         speed: s.speed,
         segments,
         length: s.segmentCount,
-        score: s.score,
-        totalScore: s.totalScore,
+        bestLength: s.bestLength,
         kills: s.kills,
         totalKills: s.totalKills,
         deathReason: s.deathReason,
@@ -431,10 +418,9 @@ export function resetGame() {
   const snakes = gameState.snakes;
   gameState = createInitialState();
   for (const snake of snakes) {
-    snake.score = 0;
-    snake.totalScore = 0;
     snake.kills = 0;
     snake.totalKills = 0;
+    snake.bestLength = 0;
     snake.alive = false;
     snake.diedAt = undefined;
     snake.deathReason = undefined;

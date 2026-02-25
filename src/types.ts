@@ -19,11 +19,10 @@ export interface Snake {
   trail: Position[];    // trail[0] = most recent head position
   segmentCount: number; // how many visible segments
 
-  // Scoring
-  score: number;
-  totalScore: number;
+  // Scoring (score = length, like Slither.io)
   kills: number;
   totalKills: number;
+  bestLength: number;  // peak length this session (high score)
 
   // AI
   aiFunction: string;
@@ -60,7 +59,6 @@ export interface AIInput {
     speed: number;
     segments: Position[];
     length: number;
-    score: number;
   };
   arena: {
     radius: number;

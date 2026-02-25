@@ -95,8 +95,7 @@ export async function registerRoutes(app: FastifyInstance) {
           angle: "number — current heading in radians",
           speed: "number — movement speed per tick",
           segments: "[{x, y}, ...] — body segment positions",
-          length: "number — segment count",
-          score: "number — current score",
+          length: "number — segment count (this is your score!)",
         },
         arena: {
           radius: "number — arena radius (circular arena centered at 0,0)",
