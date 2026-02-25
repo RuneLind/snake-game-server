@@ -149,47 +149,15 @@ function ensureMinFood() {
   }
 }
 
-// --- AI Input ---
-
-function buildAIInput(snake: Snake): AIInput {
-  const segments = getSegmentPositions(snake);
-  return {
-    you: {
-      id: snake.id,
-      x: snake.headX,
-      y: snake.headY,
-      angle: snake.angle,
-      speed: snake.speed,
-      segments,
-      length: snake.segmentCount,
-    },
-    arena: {
-      radius: config.arenaRadius,
-    },
-    snakes: gameState.snakes.map(s => ({
-      id: s.id,
-      name: s.participantName,
-      x: s.headX,
-      y: s.headY,
-      angle: s.angle,
-      segments: s.alive ? getSegmentPositions(s) : [],
-      length: s.segmentCount,
-      alive: s.alive,
-    })),
-    food: gameState.food.map(f => ({
-      x: f.x,
-      y: f.y,
-      value: f.value,
-    })),
-    tick: gameState.tick,
-  };
-}
-
 // --- Tick ---
 
 async function executeTick() {
   if (gameState.status !== "running") return;
-  if (tickRunning) return; // prevent overlap
+  if (tickRunning) {
+    // Previous tick still running — schedule retry instead of dropping
+    scheduleTick();
+    return;
+  }
   tickRunning = true;
 
   try {
@@ -211,15 +179,52 @@ async function executeTick() {
     return;
   }
 
-  // 2. Run all AI functions
+  // 2. Pre-compute segments once for all snakes (avoids O(n²))
+  const precomputedSegs = new Map<string, Position[]>();
+  for (const s of gameState.snakes) {
+    precomputedSegs.set(s.id, s.alive ? getSegmentPositions(s) : []);
+  }
+
+  // 3. Run all AI functions — thin segments for AI (every 3rd point)
+  const sharedSnakesView = gameState.snakes.map(s => {
+    const full = precomputedSegs.get(s.id)!;
+    const thin: Position[] = [];
+    for (let i = 0; i < full.length; i += 3) thin.push(full[i]);
+    return {
+      id: s.id,
+      name: s.participantName,
+      x: s.headX,
+      y: s.headY,
+      angle: s.angle,
+      segments: thin,
+      length: s.segmentCount,
+      alive: s.alive,
+    };
+  });
+  const sharedFood = gameState.food.map(f => ({ x: f.x, y: f.y, value: f.value }));
+
   const aiInputs = aliveSnakes.map(s => ({
     id: s.id,
     aiFunction: s.aiFunction,
-    input: buildAIInput(s),
+    input: {
+      you: {
+        id: s.id,
+        x: s.headX,
+        y: s.headY,
+        angle: s.angle,
+        speed: s.speed,
+        segments: precomputedSegs.get(s.id)!,
+        length: s.segmentCount,
+      },
+      arena: { radius: config.arenaRadius },
+      snakes: sharedSnakesView,
+      food: sharedFood,
+      tick: gameState.tick,
+    } satisfies AIInput,
   }));
   const aiResults = await runAllAIs(aiInputs);
 
-  // 3. Turn toward target angle + track errors
+  // 4. Turn toward target angle + track errors
   for (const snake of aliveSnakes) {
     const result = aiResults.get(snake.id);
     if (result) {
@@ -230,7 +235,7 @@ async function executeTick() {
     }
   }
 
-  // 4. Move heads
+  // 5. Move heads
   for (const snake of aliveSnakes) {
     snake.headX += Math.cos(snake.angle) * snake.speed;
     snake.headY += Math.sin(snake.angle) * snake.speed;
@@ -238,13 +243,13 @@ async function executeTick() {
     pruneTrail(snake);
   }
 
-  // 5. Compute segment positions for collision
+  // 6. Compute segment positions for collision
   const segmentCache = new Map<string, Position[]>();
   for (const snake of aliveSnakes) {
     segmentCache.set(snake.id, getSegmentPositions(snake));
   }
 
-  // 6. Check food collisions
+  // 7. Check food collisions
   const eatenIndices = new Set<number>();
   for (const snake of aliveSnakes) {
     const eatThresholdSq = (config.snakeRadius + config.foodRadius) ** 2;
@@ -264,7 +269,7 @@ async function executeTick() {
     gameState.food = gameState.food.filter((_, i) => !eatenIndices.has(i));
   }
 
-  // 7. Check death collisions
+  // 8. Check death collisions
   const deadThisTick = new Set<string>();
   const killedBy = new Map<string, string>();
 
@@ -310,7 +315,7 @@ async function executeTick() {
     }
   }
 
-  // 8. Process deaths
+  // 9. Process deaths
   for (const snakeId of deadThisTick) {
     const snake = gameState.snakes.find(s => s.id === snakeId)!;
     snake.alive = false;
@@ -342,7 +347,7 @@ async function executeTick() {
     scheduleSave();
   }
 
-  // 9. Award kills
+  // 10. Award kills
   for (const [deadId, killerId] of killedBy) {
     if (deadThisTick.has(killerId)) continue;
     const killer = gameState.snakes.find(s => s.id === killerId);
@@ -352,10 +357,10 @@ async function executeTick() {
     }
   }
 
-  // 10. Ensure min food + replace eaten
+  // 11. Ensure min food + replace eaten
   ensureMinFood();
 
-  // 11. Check win condition (tournament mode)
+  // 12. Check win condition (tournament mode)
   if (!config.respawnOnDeath) {
     const alive = gameState.snakes.filter(s => s.alive);
     if (alive.length <= 1 && gameState.snakes.length > 1) {
@@ -371,7 +376,7 @@ async function executeTick() {
     }
   }
 
-  // 12. Broadcast
+  // 13. Broadcast
   broadcastState();
   } finally {
     tickRunning = false;
