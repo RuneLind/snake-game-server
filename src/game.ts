@@ -6,9 +6,11 @@ import {
   buildInitialTrail, spawnFood, round1, round2,
 } from "./arena.js";
 import { runAllAIs } from "./runner.js";
+import { saveState } from "./persistence.js";
 
 let gameState: GameState = createInitialState();
 let tickInterval: ReturnType<typeof setInterval> | null = null;
+let saveInterval: ReturnType<typeof setInterval> | null = null;
 let onTick: ((state: unknown) => void) | null = null;
 let onEvent: ((event: string, data: unknown) => void) | null = null;
 
@@ -53,8 +55,14 @@ export function registerSnake(name: string, aiFunction: string): Snake {
   const existing = gameState.snakes.find(s => s.participantName === name);
   if (existing) {
     existing.aiFunction = aiFunction;
+    existing.submissions.push({
+      tick: gameState.tick,
+      lines: aiFunction.split('\n').length,
+      timestamp: Date.now(),
+    });
     respawnSnake(existing);
     emitEvent("snake:registered", { name: existing.participantName, color: existing.color });
+    scheduleSave();
     return existing;
   }
 
@@ -74,6 +82,11 @@ export function registerSnake(name: string, aiFunction: string): Snake {
     totalKills: 0,
     deaths: 0,
     bestLength: 0,
+    submissions: [{
+      tick: gameState.tick,
+      lines: aiFunction.split('\n').length,
+      timestamp: Date.now(),
+    }],
     aiFunction,
   };
   gameState.snakes.push(snake);
@@ -81,6 +94,7 @@ export function registerSnake(name: string, aiFunction: string): Snake {
   ensureMinFood();
 
   emitEvent("snake:registered", { name: snake.participantName, color: snake.color });
+  scheduleSave();
   return snake;
 }
 
@@ -105,9 +119,15 @@ export function updateSnakeAI(snakeId: string, aiFunction: string): Snake | null
   if (!snake) return null;
 
   snake.aiFunction = aiFunction;
+  snake.submissions.push({
+    tick: gameState.tick,
+    lines: aiFunction.split('\n').length,
+    timestamp: Date.now(),
+  });
   if (snake.alive) snake.alive = false;
   respawnSnake(snake);
   emitEvent("snake:respawned", { name: snake.participantName });
+  scheduleSave();
   return snake;
 }
 
@@ -312,6 +332,7 @@ async function executeTick() {
 
     snake.trail = [];
     emitEvent("snake:died", { name: snake.participantName, reason: snake.deathReason });
+    scheduleSave();
   }
 
   // 9. Award kills
@@ -380,6 +401,7 @@ function broadcastState() {
         deaths: s.deaths,
         deathReason: s.deathReason,
         lastAIError: s.lastAIError,
+        submissions: s.submissions,
       };
     }),
     food: gameState.food.map(f => ({
@@ -436,6 +458,7 @@ export function resetGame() {
     snake.totalKills = 0;
     snake.deaths = 0;
     snake.bestLength = 0;
+    snake.submissions = [];
     snake.alive = false;
     snake.diedAt = undefined;
     snake.deathReason = undefined;
@@ -444,6 +467,73 @@ export function resetGame() {
     gameState.snakes.push(snake);
   }
   emitEvent("game:reset", {});
+}
+
+// --- Persistence ---
+
+let savePending = false;
+
+function scheduleSave() {
+  if (savePending) return;
+  savePending = true;
+  queueMicrotask(() => {
+    savePending = false;
+    saveState(getStateForPersistence());
+  });
+}
+
+export function getStateForPersistence() {
+  return {
+    tick: gameState.tick,
+    status: gameState.status,
+    snakes: gameState.snakes.map(s => ({
+      id: s.id,
+      participantName: s.participantName,
+      color: s.color,
+      aiFunction: s.aiFunction,
+      submissions: s.submissions,
+      totalKills: s.totalKills,
+      deaths: s.deaths,
+      bestLength: s.bestLength,
+    })),
+    food: gameState.food,
+  };
+}
+
+export function loadState(saved: ReturnType<typeof getStateForPersistence>) {
+  gameState.tick = saved.tick;
+  gameState.status = "waiting"; // always start paused after restore
+  gameState.food = saved.food;
+  for (const ss of saved.snakes) {
+    const snake: Snake = {
+      id: ss.id,
+      participantName: ss.participantName,
+      color: ss.color,
+      alive: false,
+      headX: 0,
+      headY: 0,
+      angle: 0,
+      speed: config.snakeSpeed,
+      trail: [],
+      segmentCount: config.startingSegments,
+      kills: 0,
+      totalKills: ss.totalKills,
+      deaths: ss.deaths,
+      bestLength: ss.bestLength,
+      submissions: ss.submissions,
+      aiFunction: ss.aiFunction,
+    };
+    gameState.snakes.push(snake);
+    respawnSnake(snake);
+  }
+  ensureMinFood();
+}
+
+export function startPeriodicSave() {
+  if (saveInterval) clearInterval(saveInterval);
+  saveInterval = setInterval(() => {
+    saveState(getStateForPersistence());
+  }, 30_000);
 }
 
 export function updateConfig(updates: Record<string, unknown>) {

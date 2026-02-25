@@ -9,7 +9,8 @@ import {
 import { Server } from "socket.io";
 import { resolve } from "path";
 import { registerRoutes } from "./routes.js";
-import { getState, setOnTick, setOnEvent, setSpectatorCount } from "./game.js";
+import { getState, setOnTick, setOnEvent, setSpectatorCount, loadState, startPeriodicSave } from "./game.js";
+import { loadSavedState } from "./persistence.js";
 
 const app = Fastify({ logger: true });
 
@@ -46,6 +47,16 @@ await app.register(fastifyStatic, {
   prefix: "/",
   wildcard: false,
 });
+
+// Restore persisted state
+const saved = await loadSavedState();
+if (saved) {
+  loadState(saved as any);
+  console.log(`Restored state: ${(saved as any).snakes?.length ?? 0} snakes, tick ${(saved as any).tick}`);
+} else {
+  console.log("Starting fresh — no saved state found");
+}
+startPeriodicSave();
 
 // Start HTTP server
 const port = parseInt(process.env.PORT ?? "3000", 10);

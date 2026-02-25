@@ -25,6 +25,13 @@ export interface Snake {
   deaths: number;
   bestLength: number;  // peak length this session (high score)
 
+  // Submissions
+  submissions: Array<{
+    tick: number;          // when submitted
+    lines: number;         // line count of aiFunction
+    timestamp: number;     // Date.now()
+  }>;
+
   // AI
   aiFunction: string;
   lastAIError?: string;  // last error from AI function execution
