@@ -192,6 +192,7 @@ async function executeTick() {
   if (tickRunning) return; // prevent overlap
   tickRunning = true;
 
+  try {
   gameState.tick++;
 
   // 1. Handle respawns
@@ -207,8 +208,6 @@ async function executeTick() {
   const aliveSnakes = gameState.snakes.filter(s => s.alive);
   if (aliveSnakes.length === 0) {
     broadcastState();
-    tickRunning = false;
-    scheduleTick();
     return;
   }
 
@@ -337,6 +336,9 @@ async function executeTick() {
 
     snake.trail = [];
     emitEvent("snake:died", { name: snake.participantName, reason: snake.deathReason });
+  }
+
+  if (deadThisTick.size > 0) {
     scheduleSave();
   }
 
@@ -371,8 +373,10 @@ async function executeTick() {
 
   // 12. Broadcast
   broadcastState();
-  tickRunning = false;
-  scheduleTick();
+  } finally {
+    tickRunning = false;
+    scheduleTick();
+  }
 }
 
 function broadcastState() {
@@ -514,15 +518,21 @@ export function getStateForPersistence() {
   };
 }
 
-export function loadState(saved: ReturnType<typeof getStateForPersistence>) {
-  gameState.tick = saved.tick;
+export function loadState(saved: unknown) {
+  const s = saved as any;
+  if (!s || typeof s !== "object" || !Array.isArray(s.snakes) || typeof s.tick !== "number") {
+    throw new Error("Invalid saved state shape");
+  }
+
+  gameState.tick = s.tick;
   gameState.status = "waiting"; // always start paused after restore
-  gameState.food = saved.food;
-  for (const ss of saved.snakes) {
+  gameState.food = Array.isArray(s.food) ? s.food : [];
+  for (const ss of s.snakes) {
+    if (!ss.id || !ss.participantName || !ss.aiFunction) continue;
     const snake: Snake = {
       id: ss.id,
       participantName: ss.participantName,
-      color: ss.color,
+      color: ss.color || config.colors[0],
       alive: false,
       headX: 0,
       headY: 0,
@@ -531,10 +541,10 @@ export function loadState(saved: ReturnType<typeof getStateForPersistence>) {
       trail: [],
       segmentCount: config.startingSegments,
       kills: 0,
-      totalKills: ss.totalKills,
-      deaths: ss.deaths,
-      bestLength: ss.bestLength,
-      submissions: ss.submissions,
+      totalKills: ss.totalKills || 0,
+      deaths: ss.deaths || 0,
+      bestLength: ss.bestLength || 0,
+      submissions: Array.isArray(ss.submissions) ? ss.submissions : [],
       aiFunction: ss.aiFunction,
     };
     gameState.snakes.push(snake);

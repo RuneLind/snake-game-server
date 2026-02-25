@@ -51,8 +51,12 @@ await app.register(fastifyStatic, {
 // Restore persisted state
 const saved = await loadSavedState();
 if (saved) {
-  loadState(saved as any);
-  console.log(`Restored state: ${(saved as any).snakes?.length ?? 0} snakes, tick ${(saved as any).tick}`);
+  try {
+    loadState(saved);
+    console.log(`Restored state: ${(saved as any).snakes?.length ?? 0} snakes, tick ${(saved as any).tick}`);
+  } catch (err) {
+    console.error("Failed to restore saved state, starting fresh:", err);
+  }
 } else {
   console.log("Starting fresh — no saved state found");
 }

@@ -1,6 +1,10 @@
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { mkdirSync } from "fs";
 
 const STATE_PATH = resolve(import.meta.dir, "../data/state.json");
+
+// Ensure data directory exists on module load
+mkdirSync(dirname(STATE_PATH), { recursive: true });
 
 export async function saveState(state: unknown): Promise<void> {
   try {
