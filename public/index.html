@@ -388,27 +388,32 @@ function lightenColor(hex, amount) {
 
 function updateLeaderboard() {
   if (!currentState) return;
-  // Sort by: alive snakes by current length desc, then dead by bestLength desc
+  // Sort by best length (high score), then by current length as tiebreak
   const sorted = [...currentState.snakes].sort((a, b) => {
-    if (a.alive !== b.alive) return a.alive ? -1 : 1;
-    if (a.alive) return b.length - a.length;
-    return b.bestLength - a.bestLength;
+    const aScore = Math.max(a.bestLength, a.alive ? a.length : 0);
+    const bScore = Math.max(b.bestLength, b.alive ? b.length : 0);
+    if (bScore !== aScore) return bScore - aScore;
+    return (b.alive ? b.length : 0) - (a.alive ? a.length : 0);
   });
-  leaderboard.innerHTML = sorted.map(s => `
+  leaderboard.innerHTML = sorted.map(s => {
+    const current = s.alive ? s.length : 0;
+    const best = s.bestLength;
+    const displayScore = Math.max(best, current);
+    return `
     <div class="snake-row ${s.alive ? '' : 'dead'}">
       <div class="snake-color" style="background: ${s.color}"></div>
       <div class="snake-info">
         <div class="snake-name">${escapeHtml(s.participantName)}</div>
         <div class="snake-stats">
-          ${s.alive ? `Length: ${s.length}` : `Best: ${s.bestLength}`}
+          ${s.alive ? `Now: ${current}` : 'Dead'}${best > 0 ? ` \u00b7 Best: ${best}` : ''}
           ${s.totalKills ? ` \u00b7 ${s.totalKills} kill${s.totalKills !== 1 ? 's' : ''}` : ''}
           ${!s.alive && s.deathReason ? ' \u00b7 ' + formatDeathReason(s.deathReason) : ''}
         </div>
       </div>
-      <div class="snake-score" style="color: ${s.color}">${s.alive ? s.length : s.bestLength}</div>
+      <div class="snake-score" style="color: ${s.color}">${displayScore}</div>
       <div class="snake-status">${s.alive ? '\u{1F7E2}' : '\u{1F480}'}</div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 function formatDeathReason(reason) {
