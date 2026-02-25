@@ -624,6 +624,16 @@ socket.on('snake:respawned', (data) => addNotification(`${data.name} respawned`,
 socket.on('connect', () => console.log('Connected to game server'));
 socket.on('disconnect', () => showOverlay('DISCONNECTED', 10000));
 
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  }
+});
+
 requestAnimationFrame(render);
 </script>
 </body>
