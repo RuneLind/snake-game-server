@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import type { AIInput } from "./types.js";
 
 const WORKER_PATH = new URL("./ai-worker.ts", import.meta.url).href;
-const POOL_SIZE = 8;
+const POOL_SIZE = 30;
 
 export interface AIResult {
   targetAngle: number | null;
@@ -17,6 +17,14 @@ interface PooledWorker {
 }
 
 const pool: PooledWorker[] = [];
+const waitQueue: Array<() => void> = [];
+
+function notifyQueue() {
+  if (waitQueue.length > 0) {
+    const next = waitQueue.shift()!;
+    next();
+  }
+}
 
 function createPooledWorker(): PooledWorker {
   const pw: PooledWorker = {
@@ -35,6 +43,7 @@ function createPooledWorker(): PooledWorker {
       targetAngle: event.data.targetAngle ?? null,
       error: event.data.error ?? null,
     });
+    notifyQueue();
   };
 
   pw.worker.onerror = (e) => {
@@ -50,6 +59,7 @@ function createPooledWorker(): PooledWorker {
       pw.worker.terminate();
       pool[idx] = createPooledWorker();
     }
+    notifyQueue();
   };
 
   return pw;
@@ -64,14 +74,20 @@ function getWorker(): PooledWorker | null {
   return pool.find(pw => !pw.busy) ?? null;
 }
 
-function runAI(aiFunction: string, input: AIInput): Promise<AIResult> {
+function waitForWorker(): Promise<PooledWorker> {
+  const pw = getWorker();
+  if (pw) return Promise.resolve(pw);
   return new Promise((resolve) => {
-    const pw = getWorker();
-    if (!pw) {
-      resolve({ targetAngle: null, error: null }); // go straight silently
-      return;
-    }
+    waitQueue.push(() => {
+      const pw = getWorker();
+      if (pw) resolve(pw);
+      else waitQueue.push(() => resolve(getWorker()!));
+    });
+  });
+}
 
+function runAI(aiFunction: string, input: AIInput, pw: PooledWorker): Promise<AIResult> {
+  return new Promise((resolve) => {
     pw.busy = true;
     pw.resolve = resolve;
 
@@ -88,6 +104,7 @@ function runAI(aiFunction: string, input: AIInput): Promise<AIResult> {
         pw.worker.terminate();
         pool[idx] = createPooledWorker();
       }
+      notifyQueue();
     }, config.aiTimeoutMs);
 
     pw.worker.postMessage({ aiFunction, input });
@@ -99,7 +116,8 @@ export async function runAllAIs(
 ): Promise<Map<string, AIResult>> {
   const results = new Map<string, AIResult>();
   const promises = snakes.map(async ({ id, aiFunction, input }) => {
-    const result = await runAI(aiFunction, input);
+    const pw = await waitForWorker();
+    const result = await runAI(aiFunction, input, pw);
     results.set(id, result);
   });
   await Promise.all(promises);
