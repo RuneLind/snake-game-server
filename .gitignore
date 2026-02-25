@@ -3,4 +3,14 @@ dist/
 bun.lock
 *.log
 .DS_Store
-player-1/.snake-id
+
+# Runtime state
+data/
+
+# IDE
+.idea/
+
+# Test AI scripts
+player-1/
+claude-v1.js
+rune-v2.js
