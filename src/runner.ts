@@ -68,7 +68,7 @@ function runAI(aiFunction: string, input: AIInput): Promise<AIResult> {
   return new Promise((resolve) => {
     const pw = getWorker();
     if (!pw) {
-      resolve({ targetAngle: null, error: "No worker available" });
+      resolve({ targetAngle: null, error: null }); // go straight silently
       return;
     }
 

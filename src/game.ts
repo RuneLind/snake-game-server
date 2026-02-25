@@ -9,8 +9,9 @@ import { runAllAIs } from "./runner.js";
 import { saveState } from "./persistence.js";
 
 let gameState: GameState = createInitialState();
-let tickInterval: ReturnType<typeof setInterval> | null = null;
+let tickInterval: ReturnType<typeof setTimeout> | null = null;
 let saveInterval: ReturnType<typeof setInterval> | null = null;
+let tickRunning = false;
 let onTick: ((state: unknown) => void) | null = null;
 let onEvent: ((event: string, data: unknown) => void) | null = null;
 
@@ -188,6 +189,8 @@ function buildAIInput(snake: Snake): AIInput {
 
 async function executeTick() {
   if (gameState.status !== "running") return;
+  if (tickRunning) return; // prevent overlap
+  tickRunning = true;
 
   gameState.tick++;
 
@@ -204,6 +207,8 @@ async function executeTick() {
   const aliveSnakes = gameState.snakes.filter(s => s.alive);
   if (aliveSnakes.length === 0) {
     broadcastState();
+    tickRunning = false;
+    scheduleTick();
     return;
   }
 
@@ -366,6 +371,8 @@ async function executeTick() {
 
   // 12. Broadcast
   broadcastState();
+  tickRunning = false;
+  scheduleTick();
 }
 
 function broadcastState() {
@@ -430,14 +437,20 @@ export function startGame() {
   ensureMinFood();
   emitEvent("game:started", {});
 
-  tickInterval = setInterval(() => { executeTick(); }, config.tickRateMs);
+  scheduleTick();
+}
+
+function scheduleTick() {
+  if (tickInterval) clearTimeout(tickInterval);
+  if (gameState.status !== "running") return;
+  tickInterval = setTimeout(() => { executeTick(); }, config.tickRateMs);
 }
 
 export function pauseGame() {
   if (gameState.status !== "running") return;
   gameState.status = "paused";
   if (tickInterval) {
-    clearInterval(tickInterval);
+    clearTimeout(tickInterval);
     tickInterval = null;
   }
   emitEvent("game:paused", {});
@@ -445,7 +458,7 @@ export function pauseGame() {
 
 export function stopGame() {
   if (tickInterval) {
-    clearInterval(tickInterval);
+    clearTimeout(tickInterval);
     tickInterval = null;
   }
 }
@@ -546,7 +559,6 @@ export function updateConfig(updates: Record<string, unknown>) {
   if (updates.maxTurnRate !== undefined) config.maxTurnRate = updates.maxTurnRate as number;
 
   if (gameState.status === "running" && updates.tickRateMs !== undefined) {
-    if (tickInterval) clearInterval(tickInterval);
-    tickInterval = setInterval(() => { executeTick(); }, config.tickRateMs);
+    scheduleTick();
   }
 }
