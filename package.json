@@ -1,0 +1,24 @@
+{
+  "name": "snake-game-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/static": "^8.0.0",
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/swagger-ui": "^5.0.0",
+    "fastify": "^5.0.0",
+    "fastify-plugin": "^5.0.0",
+    "fastify-type-provider-zod": "^4.0.0",
+    "socket.io": "^4.7.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0"
+  }
+}
