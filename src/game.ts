@@ -355,10 +355,14 @@ function broadcastState() {
     status: gameState.status,
     arenaRadius: config.arenaRadius,
     snakes: gameState.snakes.map(s => {
-      const segments = s.alive ? getSegmentPositions(s).map(p => ({
-        x: round1(p.x),
-        y: round1(p.y),
-      })) : [];
+      // Thin segments for broadcast — every 3rd point is enough for smooth line rendering
+      const allSegs = s.alive ? getSegmentPositions(s) : [];
+      const segments: Array<{x: number, y: number}> = [];
+      for (let i = 0; i < allSegs.length; i++) {
+        if (i === 0 || i === allSegs.length - 1 || i % 3 === 0) {
+          segments.push({ x: round1(allSegs[i].x), y: round1(allSegs[i].y) });
+        }
+      }
       return {
         id: s.id,
         participantName: s.participantName,

@@ -301,9 +301,9 @@ function render() {
   // Food
   for (const f of currentState.food) {
     const fp = toScreen(f.x, f.y);
-    const r = Math.max(2, (f.value > 1 ? 9 : 6) * scale);
+    const r = Math.max(1.5, (f.value > 1 ? 6 : 3) * scale);
     ctx.fillStyle = f.value > 1 ? '#ff6b6b' : '#ffd43b';
-    ctx.globalAlpha = 0.8;
+    ctx.globalAlpha = 0.9;
     ctx.beginPath();
     ctx.arc(fp.x, fp.y, r, 0, Math.PI * 2);
     ctx.fill();
@@ -320,41 +320,60 @@ function render() {
 function drawSnake(snake, t) {
   const segments = snake.segments;
   const segCount = segments.length;
-  const baseRadius = 12 * scale;
+  if (segCount < 2) return;
+  const baseRadius = Math.max(3, 12 * scale);
 
   // Interpolate head position
   const dx = Math.cos(snake.angle) * snake.speed * t;
   const dy = Math.sin(snake.angle) * snake.speed * t;
   const headInterp = toScreen(segments[0].x + dx, segments[0].y + dy);
 
-  // Draw body from tail to head (head on top)
-  for (let i = segCount - 1; i >= 1; i--) {
-    const seg = toScreen(segments[i].x, segments[i].y);
-    const taper = 0.6 + 0.4 * (i / (segCount - 1));
-    const r = Math.max(2, baseRadius * taper);
-
-    ctx.fillStyle = snake.color;
-    ctx.beginPath();
-    ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
-    ctx.fill();
+  // Build screen points: interpolated head + rest of body
+  const pts = [headInterp];
+  for (let i = 1; i < segCount; i++) {
+    pts.push(toScreen(segments[i].x, segments[i].y));
   }
 
-  // Head (brighter, full size)
-  ctx.fillStyle = lightenColor(snake.color, 40);
+  // Draw body as a thick rounded stroke (tail to head)
+  // Outer body (darker outline for depth)
+  ctx.strokeStyle = darkenColor(snake.color, 40);
+  ctx.lineWidth = baseRadius * 2 + 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.arc(headInterp.x, headInterp.y, Math.max(3, baseRadius), 0, Math.PI * 2);
+  ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  for (let i = pts.length - 2; i >= 0; i--) {
+    ctx.lineTo(pts[i].x, pts[i].y);
+  }
+  ctx.stroke();
+
+  // Inner body (main color)
+  ctx.strokeStyle = snake.color;
+  ctx.lineWidth = baseRadius * 2 - 2;
+  ctx.beginPath();
+  ctx.moveTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  for (let i = pts.length - 2; i >= 0; i--) {
+    ctx.lineTo(pts[i].x, pts[i].y);
+  }
+  ctx.stroke();
+
+  // Head circle (brighter)
+  ctx.fillStyle = lightenColor(snake.color, 50);
+  ctx.beginPath();
+  ctx.arc(headInterp.x, headInterp.y, baseRadius, 0, Math.PI * 2);
   ctx.fill();
 
   // Eyes
   drawEyes(headInterp.x, headInterp.y, snake.angle, baseRadius);
 
   // Name label
-  ctx.font = `bold ${Math.max(10, Math.round(12 * scale * 8))}px sans-serif`;
+  const fontSize = Math.max(9, Math.min(14, Math.round(baseRadius * 1.2)));
+  ctx.font = `bold ${fontSize}px sans-serif`;
   ctx.fillStyle = '#fff';
   ctx.textAlign = 'center';
   ctx.shadowColor = 'rgba(0,0,0,0.9)';
-  ctx.shadowBlur = 4;
-  ctx.fillText(snake.participantName, headInterp.x, headInterp.y - baseRadius - 6);
+  ctx.shadowBlur = 3;
+  ctx.fillText(snake.participantName, headInterp.x, headInterp.y - baseRadius - 4);
   ctx.shadowBlur = 0;
 }
 
@@ -392,6 +411,14 @@ function lightenColor(hex, amount) {
   const r = Math.min(255, (num >> 16) + amount);
   const g = Math.min(255, ((num >> 8) & 0xff) + amount);
   const b = Math.min(255, (num & 0xff) + amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+function darkenColor(hex, amount) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = Math.max(0, (num >> 16) - amount);
+  const g = Math.max(0, ((num >> 8) & 0xff) - amount);
+  const b = Math.max(0, (num & 0xff) - amount);
   return `rgb(${r},${g},${b})`;
 }
 

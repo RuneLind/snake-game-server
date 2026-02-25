@@ -3,7 +3,7 @@ export const config = {
   tickRateMs: 50,           // 20 ticks/second
   snakeSpeed: 4,            // units per tick
   snakeRadius: 12,          // body segment radius
-  segmentSpacing: 20,       // distance between segment centers
+  segmentSpacing: 8,        // distance between segment centers (< 2*radius for overlap)
   maxTurnRate: 0.25,        // radians per tick (~14 degrees, responsive turning)
   startingSegments: 10,
   foodRadius: 6,
