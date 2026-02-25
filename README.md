@@ -11,10 +11,11 @@ bun install
 bun run dev
 ```
 
-Open http://localhost:3000 on the big screen.
-Open http://localhost:3000/stats for detailed submission history.
+**Game server:** http://172.16.11.247:3000
 
-Find your local IP: `ipconfig getifaddr en0` (macOS)
+Open http://172.16.11.247:3000 on the big screen.
+Open http://172.16.11.247:3000/stats for detailed submission history.
+API docs: http://172.16.11.247:3000/docs
 
 ## API
 
@@ -22,25 +23,25 @@ Find your local IP: `ipconfig getifaddr en0` (macOS)
 
 **Register:**
 ```bash
-curl -X POST http://HOST:3000/api/register \
+curl -X POST http://172.16.11.247:3000/api/register \
   -H "Content-Type: application/json" \
   -d '{"name": "YourName", "aiFunction": "function move(state) { return 0; }"}'
 ```
 
 **Update AI (kills and respawns your snake):**
 ```bash
-curl -X POST http://HOST:3000/api/submit \
+curl -X POST http://172.16.11.247:3000/api/submit \
   -H "Content-Type: application/json" \
   -d '{"snakeId": "YOUR_ID", "aiFunction": "function move(state) { ... }"}'
 ```
 
-**Debug state:** `GET http://HOST:3000/api/state`
+**Debug state:** `GET http://172.16.11.247:3000/api/state`
 
-**Stats (persisted):** `GET http://HOST:3000/api/stats`
+**Stats (persisted):** `GET http://172.16.11.247:3000/api/stats`
 
-**AI contract docs:** `GET http://HOST:3000/api/docs/ai-contract`
+**AI contract docs:** `GET http://172.16.11.247:3000/api/docs/ai-contract`
 
-**Swagger UI:** http://HOST:3000/docs
+**Swagger UI:** http://172.16.11.247:3000/docs
 
 ### Admin Endpoints
 
