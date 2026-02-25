@@ -1,10 +1,8 @@
 import { z } from "zod";
 
-export const DirectionSchema = z.enum(["UP", "DOWN", "LEFT", "RIGHT"]);
-
 export const PositionSchema = z.object({
-  x: z.number().int(),
-  y: z.number().int(),
+  x: z.number(),
+  y: z.number(),
 });
 
 export const RegisterSchema = z.object({
@@ -18,39 +16,10 @@ export const SubmitSchema = z.object({
 });
 
 export const AdminConfigSchema = z.object({
-  tickRateMs: z.number().int().min(50).max(1000).optional(),
-  boardWidth: z.number().int().min(10).max(100).optional(),
-  boardHeight: z.number().int().min(10).max(100).optional(),
+  tickRateMs: z.number().int().min(20).max(1000).optional(),
+  arenaRadius: z.number().min(500).max(10000).optional(),
   respawnOnDeath: z.boolean().optional(),
   respawnDelayMs: z.number().int().min(0).max(30000).optional(),
-});
-
-export const SnakeResponseSchema = z.object({
-  id: z.string(),
-  participantName: z.string(),
-  color: z.string(),
-  segments: z.array(PositionSchema),
-  direction: DirectionSchema,
-  alive: z.boolean(),
-  length: z.number(),
-  score: z.number(),
-  totalScore: z.number(),
-  kills: z.number(),
-  totalKills: z.number(),
-});
-
-export const FoodTileSchema = z.object({
-  position: PositionSchema,
-  value: z.number(),
-});
-
-export const GameStateResponseSchema = z.object({
-  tick: z.number(),
-  status: z.enum(["waiting", "running", "paused", "finished"]),
-  boardWidth: z.number(),
-  boardHeight: z.number(),
-  snakes: z.array(SnakeResponseSchema),
-  food: z.array(FoodTileSchema),
-  winnerId: z.string().optional(),
-  spectatorCount: z.number(),
+  snakeSpeed: z.number().min(1).max(20).optional(),
+  maxTurnRate: z.number().min(0.01).max(0.5).optional(),
 });

@@ -1,22 +1,22 @@
 import { config } from "./config.js";
-import type { Direction, Position, Snake, FoodTile, GameState, AIInput } from "./types.js";
+import type { Position, Snake, Food, GameState, AIInput } from "./types.js";
 import {
-  positionKey, isInBounds, movePosition, getOppositeDirection,
-  spawnFood, spawnEdgePosition, buildOccupiedSet, randomInt,
-} from "./board.js";
+  normalizeAngle, turnToward, distSq, isInBounds,
+  getSegmentPositions, pruneTrail, spawnSnakePosition,
+  buildInitialTrail, spawnFood, round1, round2,
+} from "./arena.js";
 import { runAllAIs } from "./runner.js";
 
 let gameState: GameState = createInitialState();
 let tickInterval: ReturnType<typeof setInterval> | null = null;
-let onTick: ((state: GameState) => void) | null = null;
+let onTick: ((state: unknown) => void) | null = null;
 let onEvent: ((event: string, data: unknown) => void) | null = null;
 
 function createInitialState(): GameState {
   return {
     tick: 0,
     status: "waiting",
-    boardWidth: config.boardWidth,
-    boardHeight: config.boardHeight,
+    arenaRadius: config.arenaRadius,
     snakes: [],
     food: [],
     spectatorCount: 0,
@@ -27,7 +27,7 @@ export function getState(): GameState {
   return gameState;
 }
 
-export function setOnTick(cb: (state: GameState) => void) {
+export function setOnTick(cb: (state: unknown) => void) {
   onTick = cb;
 }
 
@@ -47,11 +47,11 @@ function generateId(): string {
   return Math.random().toString(36).substring(2, 10);
 }
 
+// --- Registration ---
+
 export function registerSnake(name: string, aiFunction: string): Snake {
-  const existingNames = gameState.snakes.map(s => s.participantName);
-  if (existingNames.includes(name)) {
-    // Re-register: update AI and respawn
-    const existing = gameState.snakes.find(s => s.participantName === name)!;
+  const existing = gameState.snakes.find(s => s.participantName === name);
+  if (existing) {
     existing.aiFunction = aiFunction;
     respawnSnake(existing);
     emitEvent("snake:registered", { name: existing.participantName, color: existing.color });
@@ -63,10 +63,13 @@ export function registerSnake(name: string, aiFunction: string): Snake {
     id: generateId(),
     participantName: name,
     color: config.colors[colorIndex],
-    segments: [],
-    direction: "RIGHT",
     alive: false,
-    length: 0,
+    headX: 0,
+    headY: 0,
+    angle: 0,
+    speed: config.snakeSpeed,
+    trail: [],
+    segmentCount: config.startingSegments,
     score: 0,
     totalScore: 0,
     kills: 0,
@@ -75,8 +78,6 @@ export function registerSnake(name: string, aiFunction: string): Snake {
   };
   gameState.snakes.push(snake);
   respawnSnake(snake);
-
-  // Ensure minimum food
   ensureMinFood();
 
   emitEvent("snake:registered", { name: snake.participantName, color: snake.color });
@@ -84,39 +85,14 @@ export function registerSnake(name: string, aiFunction: string): Snake {
 }
 
 function respawnSnake(snake: Snake) {
-  const occupiedSet = buildOccupiedSet(
-    gameState.snakes.filter(s => s.alive && s.id !== snake.id).map(s => s.segments)
-  );
-  // Also exclude food positions
-  for (const f of gameState.food) {
-    occupiedSet.add(positionKey(f.position));
-  }
-
-  const spawn = spawnEdgePosition(occupiedSet);
-  if (!spawn) {
-    // Fallback: spawn at center facing right
-    const cx = Math.floor(config.boardWidth / 2);
-    const cy = Math.floor(config.boardHeight / 2);
-    snake.segments = [];
-    for (let i = 0; i < config.startingLength; i++) {
-      snake.segments.push({ x: cx - i, y: cy });
-    }
-    snake.direction = "RIGHT";
-  } else {
-    // Build snake body along the opposite direction from head
-    const segments: Position[] = [spawn.position];
-    const opposite = getOppositeDirection(spawn.direction);
-    let current = spawn.position;
-    for (let i = 0; i < config.startingLength - 1; i++) {
-      current = movePosition(current, opposite);
-      segments.push(current);
-    }
-    snake.segments = segments;
-    snake.direction = spawn.direction as Direction;
-  }
-
+  const spawn = spawnSnakePosition();
+  snake.headX = spawn.x;
+  snake.headY = spawn.y;
+  snake.angle = spawn.angle;
+  snake.speed = config.snakeSpeed;
+  snake.trail = buildInitialTrail(spawn.x, spawn.y, spawn.angle);
+  snake.segmentCount = config.startingSegments;
   snake.alive = true;
-  snake.length = snake.segments.length;
   snake.score = 0;
   snake.kills = 0;
   snake.diedAt = undefined;
@@ -129,10 +105,7 @@ export function updateSnakeAI(snakeId: string, aiFunction: string): Snake | null
   if (!snake) return null;
 
   snake.aiFunction = aiFunction;
-  // Kill and respawn immediately
-  if (snake.alive) {
-    snake.alive = false;
-  }
+  if (snake.alive) snake.alive = false;
   respawnSnake(snake);
   emitEvent("snake:respawned", { name: snake.participantName });
   return snake;
@@ -145,55 +118,59 @@ export function removeSnake(snakeId: string): boolean {
   return true;
 }
 
-function ensureMinFood() {
-  const aliveCount = gameState.snakes.filter(s => s.alive).length;
-  const minRequired = Math.max(config.minFood, Math.floor(aliveCount / 2));
-  const occupiedSet = buildOccupiedSet(gameState.snakes.map(s => s.segments));
+// --- Food ---
 
-  while (gameState.food.length < minRequired) {
-    const food = spawnFood(occupiedSet, gameState.food);
-    if (!food) break;
-    gameState.food.push(food);
+function ensureMinFood() {
+  while (gameState.food.length < config.minFood) {
+    gameState.food.push(spawnFood());
   }
 }
 
+// --- AI Input ---
+
 function buildAIInput(snake: Snake): AIInput {
+  const segments = getSegmentPositions(snake);
   return {
     you: {
       id: snake.id,
-      head: snake.segments[0],
-      segments: [...snake.segments],
-      direction: snake.direction,
-      length: snake.length,
+      x: snake.headX,
+      y: snake.headY,
+      angle: snake.angle,
+      speed: snake.speed,
+      segments,
+      length: snake.segmentCount,
       score: snake.score,
     },
-    board: {
-      width: config.boardWidth,
-      height: config.boardHeight,
+    arena: {
+      radius: config.arenaRadius,
     },
     snakes: gameState.snakes.map(s => ({
       id: s.id,
       name: s.participantName,
-      head: s.segments[0],
-      segments: [...s.segments],
-      direction: s.direction,
-      length: s.length,
+      x: s.headX,
+      y: s.headY,
+      angle: s.angle,
+      segments: s.alive ? getSegmentPositions(s) : [],
+      length: s.segmentCount,
       alive: s.alive,
     })),
     food: gameState.food.map(f => ({
-      position: { ...f.position },
+      x: f.x,
+      y: f.y,
       value: f.value,
     })),
     tick: gameState.tick,
   };
 }
 
+// --- Tick ---
+
 async function executeTick() {
   if (gameState.status !== "running") return;
 
   gameState.tick++;
 
-  // Handle respawning dead snakes in continuous mode
+  // 1. Handle respawns
   if (config.respawnOnDeath) {
     for (const snake of gameState.snakes) {
       if (!snake.alive && snake.respawnAt && gameState.tick >= snake.respawnAt) {
@@ -205,154 +182,135 @@ async function executeTick() {
 
   const aliveSnakes = gameState.snakes.filter(s => s.alive);
   if (aliveSnakes.length === 0) {
-    onTick?.(gameState);
+    broadcastState();
     return;
   }
 
-  // 1. Run all AI functions in parallel
+  // 2. Run all AI functions
   const aiInputs = aliveSnakes.map(s => ({
     id: s.id,
     aiFunction: s.aiFunction,
     input: buildAIInput(s),
   }));
+  const targetAngles = await runAllAIs(aiInputs);
 
-  const directions = await runAllAIs(aiInputs);
-
-  // 2. Apply directions with reversal guard
+  // 3. Turn toward target angle
   for (const snake of aliveSnakes) {
-    const dir = directions.get(snake.id);
-    if (dir && dir !== getOppositeDirection(snake.direction)) {
-      snake.direction = dir;
-    }
-    // else: keep current direction (null = AI error/timeout, opposite = illegal reversal)
-  }
-
-  // 3. Move all snakes simultaneously
-  const foodMap = new Map<string, number>(); // key -> index in food array
-  gameState.food.forEach((f, i) => foodMap.set(positionKey(f.position), i));
-
-  const newHeads = new Map<string, Position>();
-  const ateFood = new Map<string, number>(); // snakeId -> food index
-
-  for (const snake of aliveSnakes) {
-    const newHead = movePosition(snake.segments[0], snake.direction);
-    newHeads.set(snake.id, newHead);
-
-    // Check if eating food
-    const foodKey = positionKey(newHead);
-    const foodIndex = foodMap.get(foodKey);
-    if (foodIndex !== undefined) {
-      ateFood.set(snake.id, foodIndex);
+    const target = targetAngles.get(snake.id);
+    if (target !== null && target !== undefined) {
+      snake.angle = turnToward(snake.angle, normalizeAngle(target), config.maxTurnRate);
     }
   }
 
-  // Apply movement
-  const foodToRemove = new Set<number>();
+  // 4. Move heads
   for (const snake of aliveSnakes) {
-    const newHead = newHeads.get(snake.id)!;
-    snake.segments.unshift(newHead);
-
-    if (ateFood.has(snake.id)) {
-      const foodIndex = ateFood.get(snake.id)!;
-      const foodValue = gameState.food[foodIndex]?.value ?? 1;
-      snake.score += foodValue * 10;
-      snake.totalScore += foodValue * 10;
-      foodToRemove.add(foodIndex);
-    } else {
-      snake.segments.pop();
-    }
-    snake.length = snake.segments.length;
+    snake.headX += Math.cos(snake.angle) * snake.speed;
+    snake.headY += Math.sin(snake.angle) * snake.speed;
+    snake.trail.unshift({ x: snake.headX, y: snake.headY });
+    pruneTrail(snake);
   }
 
-  // Remove eaten food
-  gameState.food = gameState.food.filter((_, i) => !foodToRemove.has(i));
-
-  // 4. Resolve collisions
-  const bodySet = new Map<string, string[]>(); // posKey -> snakeIds whose BODY (not head) is there
+  // 5. Compute segment positions for collision
+  const segmentCache = new Map<string, Position[]>();
   for (const snake of aliveSnakes) {
-    for (let i = 1; i < snake.segments.length; i++) {
-      const key = positionKey(snake.segments[i]);
-      if (!bodySet.has(key)) bodySet.set(key, []);
-      bodySet.get(key)!.push(snake.id);
-    }
+    segmentCache.set(snake.id, getSegmentPositions(snake));
   }
 
+  // 6. Check food collisions
+  const eatenIndices = new Set<number>();
+  for (const snake of aliveSnakes) {
+    const eatThresholdSq = (config.snakeRadius + config.foodRadius) ** 2;
+    for (let i = 0; i < gameState.food.length; i++) {
+      if (eatenIndices.has(i)) continue;
+      const food = gameState.food[i];
+      if (distSq(snake.headX, snake.headY, food.x, food.y) < eatThresholdSq) {
+        eatenIndices.add(i);
+        snake.segmentCount += food.value;
+        snake.score += food.value * 10;
+        snake.totalScore += food.value * 10;
+      }
+    }
+  }
+  if (eatenIndices.size > 0) {
+    gameState.food = gameState.food.filter((_, i) => !eatenIndices.has(i));
+  }
+
+  // 7. Check death collisions
   const deadThisTick = new Set<string>();
-  const killedBy = new Map<string, string>(); // deadSnakeId -> killerSnakeId
+  const killedBy = new Map<string, string>();
 
   for (const snake of aliveSnakes) {
-    const head = snake.segments[0];
-
-    // Wall collision
-    if (!isInBounds(head)) {
+    // Boundary check
+    if (!isInBounds(snake.headX, snake.headY)) {
       deadThisTick.add(snake.id);
-      snake.deathReason = "wall";
+      snake.deathReason = "boundary";
       continue;
     }
 
-    // Body collision (head hits any body segment)
-    const key = positionKey(head);
-    const bodyOwners = bodySet.get(key);
-    if (bodyOwners && bodyOwners.length > 0) {
-      deadThisTick.add(snake.id);
-      const killer = bodyOwners.find(id => id !== snake.id);
-      if (killer) {
-        const killerSnake = gameState.snakes.find(s => s.id === killer);
-        snake.deathReason = `snake:${killerSnake?.participantName ?? killer}`;
-        killedBy.set(snake.id, killer);
-      } else {
-        snake.deathReason = "self";
+    // Head vs other snake segments (no self-collision)
+    const collisionDistSq = (config.snakeRadius * 2) ** 2;
+    for (const other of aliveSnakes) {
+      if (other.id === snake.id) continue;
+      const otherSegs = segmentCache.get(other.id)!;
+      // Skip head (index 0) of other — that's head-to-head, handled below
+      for (let i = 1; i < otherSegs.length; i++) {
+        if (distSq(snake.headX, snake.headY, otherSegs[i].x, otherSegs[i].y) < collisionDistSq) {
+          deadThisTick.add(snake.id);
+          snake.deathReason = `snake:${other.participantName}`;
+          killedBy.set(snake.id, other.id);
+          break;
+        }
+      }
+      if (deadThisTick.has(snake.id)) break;
+    }
+  }
+
+  // Head-to-head collisions
+  const headCollisionDistSq = (config.snakeRadius * 2) ** 2;
+  for (let i = 0; i < aliveSnakes.length; i++) {
+    for (let j = i + 1; j < aliveSnakes.length; j++) {
+      const a = aliveSnakes[i];
+      const b = aliveSnakes[j];
+      if (deadThisTick.has(a.id) || deadThisTick.has(b.id)) continue;
+      if (distSq(a.headX, a.headY, b.headX, b.headY) < headCollisionDistSq) {
+        deadThisTick.add(a.id);
+        deadThisTick.add(b.id);
+        a.deathReason = `headon:${b.participantName}`;
+        b.deathReason = `headon:${a.participantName}`;
       }
     }
   }
 
-  // Head-to-head collisions: both die
-  const headPositions = new Map<string, string[]>();
-  for (const snake of aliveSnakes) {
-    if (deadThisTick.has(snake.id)) continue;
-    const key = positionKey(snake.segments[0]);
-    if (!headPositions.has(key)) headPositions.set(key, []);
-    headPositions.get(key)!.push(snake.id);
-  }
-
-  for (const [, snakeIds] of headPositions) {
-    if (snakeIds.length > 1) {
-      for (const id of snakeIds) {
-        deadThisTick.add(id);
-        const snake = gameState.snakes.find(s => s.id === id)!;
-        const otherNames = snakeIds
-          .filter(oid => oid !== id)
-          .map(oid => gameState.snakes.find(s => s.id === oid)?.participantName ?? oid);
-        snake.deathReason = `headon:${otherNames.join(",")}`;
-      }
-    }
-  }
-
-  // 5. Process deaths
+  // 8. Process deaths
   for (const snakeId of deadThisTick) {
     const snake = gameState.snakes.find(s => s.id === snakeId)!;
     snake.alive = false;
     snake.diedAt = gameState.tick;
 
     if (config.respawnOnDeath) {
-      const respawnTick = gameState.tick + Math.ceil(config.respawnDelayMs / config.tickRateMs);
-      snake.respawnAt = respawnTick;
+      snake.respawnAt = gameState.tick + Math.ceil(config.respawnDelayMs / config.tickRateMs);
     }
 
-    // Convert body to food (capped)
-    for (const segment of snake.segments) {
-      if (gameState.food.length >= config.maxFood) break;
-      gameState.food.push({ position: { ...segment }, value: 1 });
+    // Convert body to food
+    const segments = segmentCache.get(snake.id) ?? [];
+    const foodCount = Math.floor(segments.length * 0.5);
+    for (let i = 0; i < foodCount && gameState.food.length < config.maxFood; i++) {
+      const seg = segments[Math.floor(i * segments.length / foodCount)];
+      gameState.food.push({
+        x: seg.x + (Math.random() - 0.5) * 10,
+        y: seg.y + (Math.random() - 0.5) * 10,
+        value: 2,
+        radius: config.foodRadius * 1.5,
+      });
     }
-    snake.segments = [];
-    snake.length = 0;
 
+    snake.trail = [];
     emitEvent("snake:died", { name: snake.participantName, reason: snake.deathReason });
   }
 
-  // Award kills
+  // 9. Award kills
   for (const [deadId, killerId] of killedBy) {
-    if (deadThisTick.has(killerId)) continue; // dead snakes don't get kill credit
+    if (deadThisTick.has(killerId)) continue;
     const killer = gameState.snakes.find(s => s.id === killerId);
     if (killer) {
       killer.kills++;
@@ -368,18 +326,10 @@ async function executeTick() {
     snake.totalScore += 1;
   }
 
-  // Ensure minimum food
+  // 10. Ensure min food + replace eaten
   ensureMinFood();
 
-  // Spawn new food to replace eaten food
-  const occupiedSet = buildOccupiedSet(gameState.snakes.filter(s => s.alive).map(s => s.segments));
-  for (const _ of foodToRemove) {
-    if (gameState.food.length >= config.maxFood) break;
-    const food = spawnFood(occupiedSet, gameState.food);
-    if (food) gameState.food.push(food);
-  }
-
-  // 6. Check win condition (tournament mode)
+  // 11. Check win condition (tournament mode)
   if (!config.respawnOnDeath) {
     const alive = gameState.snakes.filter(s => s.alive);
     if (alive.length <= 1 && gameState.snakes.length > 1) {
@@ -397,29 +347,66 @@ async function executeTick() {
     }
   }
 
-  // 7. Broadcast
-  onTick?.(gameState);
+  // 12. Broadcast
+  broadcastState();
 }
+
+function broadcastState() {
+  if (!onTick) return;
+
+  const state = {
+    tick: gameState.tick,
+    status: gameState.status,
+    arenaRadius: config.arenaRadius,
+    snakes: gameState.snakes.map(s => {
+      const segments = s.alive ? getSegmentPositions(s).map(p => ({
+        x: round1(p.x),
+        y: round1(p.y),
+      })) : [];
+      return {
+        id: s.id,
+        participantName: s.participantName,
+        color: s.color,
+        alive: s.alive,
+        x: round1(s.headX),
+        y: round1(s.headY),
+        angle: round2(s.angle),
+        speed: s.speed,
+        segments,
+        length: s.segmentCount,
+        score: s.score,
+        totalScore: s.totalScore,
+        kills: s.kills,
+        totalKills: s.totalKills,
+        deathReason: s.deathReason,
+      };
+    }),
+    food: gameState.food.map(f => ({
+      x: round1(f.x),
+      y: round1(f.y),
+      value: f.value,
+    })),
+    spectatorCount: gameState.spectatorCount,
+  };
+
+  onTick(state);
+}
+
+// --- Game control ---
 
 export function startGame() {
   if (gameState.status === "running") return;
   gameState.status = "running";
-  gameState.boardWidth = config.boardWidth;
-  gameState.boardHeight = config.boardHeight;
+  gameState.arenaRadius = config.arenaRadius;
 
-  // Respawn all dead snakes on start
   for (const snake of gameState.snakes) {
-    if (!snake.alive) {
-      respawnSnake(snake);
-    }
+    if (!snake.alive) respawnSnake(snake);
   }
 
   ensureMinFood();
   emitEvent("game:started", {});
 
-  tickInterval = setInterval(() => {
-    executeTick();
-  }, config.tickRateMs);
+  tickInterval = setInterval(() => { executeTick(); }, config.tickRateMs);
 }
 
 export function pauseGame() {
@@ -443,7 +430,6 @@ export function resetGame() {
   stopGame();
   const snakes = gameState.snakes;
   gameState = createInitialState();
-  // Keep registrations but reset stats
   for (const snake of snakes) {
     snake.score = 0;
     snake.totalScore = 0;
@@ -453,8 +439,7 @@ export function resetGame() {
     snake.diedAt = undefined;
     snake.deathReason = undefined;
     snake.respawnAt = undefined;
-    snake.segments = [];
-    snake.length = 0;
+    snake.trail = [];
     gameState.snakes.push(snake);
   }
   emitEvent("game:reset", {});
@@ -462,16 +447,14 @@ export function resetGame() {
 
 export function updateConfig(updates: Record<string, unknown>) {
   if (updates.tickRateMs !== undefined) config.tickRateMs = updates.tickRateMs as number;
-  if (updates.boardWidth !== undefined) config.boardWidth = updates.boardWidth as number;
-  if (updates.boardHeight !== undefined) config.boardHeight = updates.boardHeight as number;
+  if (updates.arenaRadius !== undefined) config.arenaRadius = updates.arenaRadius as number;
   if (updates.respawnOnDeath !== undefined) config.respawnOnDeath = updates.respawnOnDeath as boolean;
   if (updates.respawnDelayMs !== undefined) config.respawnDelayMs = updates.respawnDelayMs as number;
+  if (updates.snakeSpeed !== undefined) config.snakeSpeed = updates.snakeSpeed as number;
+  if (updates.maxTurnRate !== undefined) config.maxTurnRate = updates.maxTurnRate as number;
 
-  // If game is running, restart the interval with new tick rate
   if (gameState.status === "running" && updates.tickRateMs !== undefined) {
     if (tickInterval) clearInterval(tickInterval);
-    tickInterval = setInterval(() => {
-      executeTick();
-    }, config.tickRateMs);
+    tickInterval = setInterval(() => { executeTick(); }, config.tickRateMs);
   }
 }

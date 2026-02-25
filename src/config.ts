@@ -1,13 +1,17 @@
 export const config = {
-  boardWidth: 40,
-  boardHeight: 30,
-  tickRateMs: 150,
-  minFood: 5,
-  maxFood: 50,
+  arenaRadius: 2000,
+  tickRateMs: 50,           // 20 ticks/second
+  snakeSpeed: 4,            // units per tick
+  snakeRadius: 12,          // body segment radius
+  segmentSpacing: 20,       // distance between segment centers
+  maxTurnRate: 0.08,        // radians per tick (~4.6 degrees)
+  startingSegments: 10,
+  foodRadius: 6,
+  minFood: 200,
+  maxFood: 600,
   respawnOnDeath: true,
   respawnDelayMs: 3000,
   aiTimeoutMs: 50,
-  startingLength: 3,
   colors: [
     "#e74c3c", "#3498db", "#2ecc71", "#f39c12",
     "#9b59b6", "#1abc9c", "#e67e22", "#e91e63",

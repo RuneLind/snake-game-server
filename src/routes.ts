@@ -69,25 +69,7 @@ export async function registerRoutes(app: FastifyInstance) {
       tags: ["participant"],
     },
   }, async () => {
-    const state = getState();
-    return {
-      ...state,
-      snakes: state.snakes.map(s => ({
-        id: s.id,
-        participantName: s.participantName,
-        color: s.color,
-        segments: s.segments,
-        direction: s.direction,
-        alive: s.alive,
-        length: s.length,
-        score: s.score,
-        totalScore: s.totalScore,
-        kills: s.kills,
-        totalKills: s.totalKills,
-        diedAt: s.diedAt,
-        deathReason: s.deathReason,
-      })),
-    };
+    return getState();
   });
 
   // --- AI Function Contract Documentation ---
@@ -99,64 +81,68 @@ export async function registerRoutes(app: FastifyInstance) {
     },
   }, async () => {
     return {
-      description: "Submit a JavaScript function named 'move' that controls your snake.",
-      signature: "function move(state) { return 'UP' | 'DOWN' | 'LEFT' | 'RIGHT'; }",
+      description: "Submit a JavaScript function named 'move' that controls your snake. Returns a target angle in radians.",
+      signature: "function move(state) { return angleInRadians; }",
+      returnValue: {
+        type: "number",
+        description: "Target angle in radians. 0 = right, PI/2 = down, PI = left, 3*PI/2 = up. The snake turns toward this angle at its max turn rate.",
+      },
       state: {
         you: {
           id: "string — your snake's unique ID",
-          head: "{ x, y } — your head position (0,0 is top-left)",
-          segments: "[{ x, y }, ...] — all body segments, segments[0] is head",
-          direction: "'UP' | 'DOWN' | 'LEFT' | 'RIGHT' — current travel direction",
-          length: "number — current body length",
+          x: "number — head X position (0,0 is center of arena)",
+          y: "number — head Y position",
+          angle: "number — current heading in radians",
+          speed: "number — movement speed per tick",
+          segments: "[{x, y}, ...] — body segment positions",
+          length: "number — segment count",
           score: "number — current score",
         },
-        board: {
-          width: "number — board width in cells",
-          height: "number — board height in cells",
+        arena: {
+          radius: "number — arena radius (circular arena centered at 0,0)",
         },
-        snakes: "Array of all snakes: { id, name, head, segments, direction, length, alive }",
-        food: "Array of food tiles: { position: { x, y }, value: number }",
+        snakes: "Array of all snakes: { id, name, x, y, angle, segments, length, alive }",
+        food: "Array of food: { x, y, value }",
         tick: "number — current game tick",
       },
+      helperFunctions: {
+        "angleTo(x1, y1, x2, y2)": "Returns angle from point 1 to point 2 in radians",
+        "distTo(x1, y1, x2, y2)": "Returns distance between two points",
+        "distFromCenter(x, y)": "Returns distance from arena center (0,0)",
+      },
       rules: [
-        "Function must return synchronously",
-        "Max execution time: 50ms (exceeded = snake goes straight)",
-        "Returning opposite direction (180° reversal) is ignored",
-        "Runtime errors = snake goes straight that tick",
+        "Function must return a number (angle in radians)",
+        "Max execution time: 50ms (exceeded = snake continues straight)",
+        "Invalid return or error = snake continues straight",
+        "Snake turns toward target angle at max ~4.6 degrees per tick",
         "State object is a deep copy — mutations have no effect",
+        "No self-collision — you only die from hitting other snakes or the boundary",
       ],
       example: `function move(state) {
-  const { head, direction } = state.you;
-  const { width, height } = state.board;
+  const { x, y, angle } = state.you;
+  const arena = state.arena;
 
-  const occupied = new Set(
-    state.snakes
-      .filter(s => s.alive)
-      .flatMap(s => s.segments)
-      .map(p => \`\${p.x},\${p.y}\`)
-  );
-
-  const options = ["UP", "DOWN", "LEFT", "RIGHT"];
-  const opposites = { UP: "DOWN", DOWN: "UP", LEFT: "RIGHT", RIGHT: "LEFT" };
-
-  const next = (pos, dir) => ({
-    UP:    { x: pos.x,     y: pos.y - 1 },
-    DOWN:  { x: pos.x,     y: pos.y + 1 },
-    LEFT:  { x: pos.x - 1, y: pos.y     },
-    RIGHT: { x: pos.x + 1, y: pos.y     },
-  })[dir];
-
-  const safe = (pos) =>
-    pos.x >= 0 && pos.x < width &&
-    pos.y >= 0 && pos.y < height &&
-    !occupied.has(\`\${pos.x},\${pos.y}\`);
-
-  for (const dir of [direction, ...options]) {
-    if (dir === opposites[direction]) continue;
-    if (safe(next(head, dir))) return dir;
+  // If too close to boundary, turn toward center
+  if (distFromCenter(x, y) > arena.radius * 0.8) {
+    return angleTo(x, y, 0, 0);
   }
 
-  return direction;
+  // Find nearest food
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const f of state.food) {
+    const d = distTo(x, y, f.x, f.y);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = f;
+    }
+  }
+
+  if (nearest) {
+    return angleTo(x, y, nearest.x, nearest.y);
+  }
+
+  return angle; // continue straight
 }`,
     };
   });
@@ -164,30 +150,21 @@ export async function registerRoutes(app: FastifyInstance) {
   // --- Admin routes ---
 
   app.post("/api/admin/start", {
-    schema: {
-      description: "Start the game loop",
-      tags: ["admin"],
-    },
+    schema: { description: "Start the game loop", tags: ["admin"] },
   }, async () => {
     startGame();
     return { status: "started" };
   });
 
   app.post("/api/admin/pause", {
-    schema: {
-      description: "Pause the game loop",
-      tags: ["admin"],
-    },
+    schema: { description: "Pause the game loop", tags: ["admin"] },
   }, async () => {
     pauseGame();
     return { status: "paused" };
   });
 
   app.post("/api/admin/reset", {
-    schema: {
-      description: "Reset the game. Keeps registrations but clears scores and respawns all snakes.",
-      tags: ["admin"],
-    },
+    schema: { description: "Reset the game. Keeps registrations but clears scores.", tags: ["admin"] },
   }, async () => {
     resetGame();
     return { status: "reset" };
@@ -202,15 +179,13 @@ export async function registerRoutes(app: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const removed = removeSnake(id);
-    if (!removed) {
-      return reply.status(404).send({ error: "Snake not found" });
-    }
+    if (!removed) return reply.status(404).send({ error: "Snake not found" });
     return { status: "removed" };
   });
 
   typedApp.post("/api/admin/config", {
     schema: {
-      description: "Update game configuration (tick rate, board size, etc.)",
+      description: "Update game configuration",
       tags: ["admin"],
       body: AdminConfigSchema,
     },

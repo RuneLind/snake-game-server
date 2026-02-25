@@ -1,16 +1,25 @@
 /// <reference lib="webworker" />
 
-// This file runs inside a Bun Worker.
-// It receives an AI function string + game state, executes it, and posts back the direction.
+declare var self: Worker;
 
 const FORBIDDEN = ["fetch", "require", "import", "process", "Bun", "Deno", "globalThis.process"];
 
-declare var self: Worker;
+// Helper functions injected into AI sandbox scope
+const HELPERS = `
+function angleTo(x1, y1, x2, y2) {
+  return Math.atan2(y2 - y1, x2 - x1);
+}
+function distTo(x1, y1, x2, y2) {
+  return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+}
+function distFromCenter(x, y) {
+  return Math.sqrt(x * x + y * y);
+}
+`;
 
 self.onmessage = (event: MessageEvent) => {
   const { aiFunction, input } = event.data;
   try {
-    // Strip dangerous globals
     let sanitized = aiFunction;
     for (const word of FORBIDDEN) {
       if (sanitized.includes(word)) {
@@ -19,16 +28,15 @@ self.onmessage = (event: MessageEvent) => {
     }
 
     const safeInput = JSON.parse(JSON.stringify(input));
-    const fn = new Function("state", sanitized + "\nreturn move(state);");
+    const fn = new Function("state", HELPERS + sanitized + "\nreturn move(state);");
     const result = fn(safeInput);
 
-    const validDirections = ["UP", "DOWN", "LEFT", "RIGHT"];
-    if (validDirections.includes(result)) {
-      self.postMessage({ direction: result });
+    if (typeof result === "number" && isFinite(result)) {
+      self.postMessage({ targetAngle: result });
     } else {
-      self.postMessage({ direction: null });
+      self.postMessage({ targetAngle: null });
     }
   } catch {
-    self.postMessage({ direction: null });
+    self.postMessage({ targetAngle: null });
   }
 };

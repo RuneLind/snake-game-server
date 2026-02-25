@@ -13,10 +13,7 @@
     overflow: hidden;
     height: 100vh;
   }
-  #container {
-    display: flex;
-    height: 100vh;
-  }
+  #container { display: flex; height: 100vh; }
   #game-area {
     flex: 1;
     display: flex;
@@ -24,10 +21,7 @@
     justify-content: center;
     position: relative;
   }
-  #canvas {
-    background: #111;
-    border: 2px solid #333;
-  }
+  #canvas { background: #0a0a0a; }
   #sidebar {
     width: 320px;
     background: #141414;
@@ -55,11 +49,7 @@
     display: flex;
     justify-content: space-between;
   }
-  #leaderboard {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-  }
+  #leaderboard { flex: 1; overflow-y: auto; padding: 8px; }
   .snake-row {
     display: flex;
     align-items: center;
@@ -69,20 +59,14 @@
     background: #1a1a1a;
     transition: all 0.3s ease;
   }
-  .snake-row.dead {
-    opacity: 0.4;
-  }
+  .snake-row.dead { opacity: 0.4; }
   .snake-color {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
     margin-right: 10px;
     flex-shrink: 0;
   }
-  .snake-info {
-    flex: 1;
-    min-width: 0;
-  }
+  .snake-info { flex: 1; min-width: 0; }
   .snake-name {
     font-size: 14px;
     font-weight: 600;
@@ -90,21 +74,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .snake-stats {
-    font-size: 11px;
-    color: #888;
-    margin-top: 2px;
-  }
+  .snake-stats { font-size: 11px; color: #888; margin-top: 2px; }
   .snake-score {
     font-size: 18px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     margin-left: 8px;
   }
-  .snake-status {
-    margin-left: 8px;
-    font-size: 14px;
-  }
+  .snake-status { margin-left: 8px; font-size: 14px; }
   #overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -122,9 +99,7 @@
     opacity: 0;
     transition: opacity 0.5s ease;
   }
-  #overlay-text.visible {
-    opacity: 1;
-  }
+  #overlay-text.visible { opacity: 1; }
   #notifications {
     position: absolute;
     top: 16px;
@@ -152,15 +127,11 @@
 <div id="container">
   <div id="game-area">
     <canvas id="canvas"></canvas>
-    <div id="overlay">
-      <div id="overlay-text"></div>
-    </div>
+    <div id="overlay"><div id="overlay-text"></div></div>
     <div id="notifications"></div>
   </div>
   <div id="sidebar">
-    <div id="sidebar-header">
-      <h1>SNAKE AI ARENA</h1>
-    </div>
+    <div id="sidebar-header"><h1>SNAKE AI ARENA</h1></div>
     <div id="game-info">
       <span id="tick-info">Tick: 0</span>
       <span id="status-info">Waiting</span>
@@ -182,111 +153,173 @@ const overlayText = document.getElementById('overlay-text');
 const notifications = document.getElementById('notifications');
 
 let currentState = null;
-let cellSize = 16;
+let prevState = null;
+let lastTickTime = 0;
+let scale = 1;
+let centerX = 0;
+let centerY = 0;
 
 function resizeCanvas() {
-  if (!currentState) return;
   const area = document.getElementById('game-area');
-  const maxW = area.clientWidth - 32;
-  const maxH = area.clientHeight - 32;
-  cellSize = Math.floor(Math.min(maxW / currentState.boardWidth, maxH / currentState.boardHeight));
-  canvas.width = currentState.boardWidth * cellSize;
-  canvas.height = currentState.boardHeight * cellSize;
-  render();
+  const size = Math.min(area.clientWidth - 16, area.clientHeight - 16);
+  canvas.width = size;
+  canvas.height = size;
+  centerX = size / 2;
+  centerY = size / 2;
+  if (currentState) {
+    scale = (size / 2 - 20) / currentState.arenaRadius;
+  }
 }
 
 window.addEventListener('resize', resizeCanvas);
 
-function render() {
-  if (!currentState) return;
-  const { boardWidth, boardHeight, snakes, food } = currentState;
-  const w = boardWidth * cellSize;
-  const h = boardHeight * cellSize;
+function toScreen(x, y) {
+  return { x: centerX + x * scale, y: centerY + y * scale };
+}
 
-  // Background
-  ctx.fillStyle = '#111';
+function render() {
+  requestAnimationFrame(render);
+  if (!currentState) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Interpolation factor
+  const elapsed = performance.now() - lastTickTime;
+  const tickMs = 50;
+  const t = Math.min(1, elapsed / tickMs);
+
+  // Clear
+  ctx.clearRect(0, 0, w, h);
+
+  // Dark background
+  ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0, 0, w, h);
 
-  // Grid lines
-  ctx.strokeStyle = '#1a1a1a';
+  // Arena circle
+  const arenaScreen = scale * currentState.arenaRadius;
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, arenaScreen, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Subtle grid
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.025)';
   ctx.lineWidth = 1;
-  for (let x = 0; x <= boardWidth; x++) {
+  const gridSize = 200 * scale;
+  const gridRange = arenaScreen;
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, arenaScreen, 0, Math.PI * 2);
+  ctx.clip();
+  for (let gx = -gridRange; gx <= gridRange; gx += gridSize) {
     ctx.beginPath();
-    ctx.moveTo(x * cellSize, 0);
-    ctx.lineTo(x * cellSize, h);
+    ctx.moveTo(centerX + gx, centerY - gridRange);
+    ctx.lineTo(centerX + gx, centerY + gridRange);
     ctx.stroke();
   }
-  for (let y = 0; y <= boardHeight; y++) {
+  for (let gy = -gridRange; gy <= gridRange; gy += gridSize) {
     ctx.beginPath();
-    ctx.moveTo(0, y * cellSize);
-    ctx.lineTo(w, y * cellSize);
+    ctx.moveTo(centerX - gridRange, centerY + gy);
+    ctx.lineTo(centerX + gridRange, centerY + gy);
     ctx.stroke();
   }
+  ctx.restore();
+
+  // Boundary glow
+  ctx.strokeStyle = 'rgba(255, 50, 50, 0.25)';
+  ctx.lineWidth = Math.max(2, 15 * scale);
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, arenaScreen, 0, Math.PI * 2);
+  ctx.stroke();
 
   // Food
-  for (const f of food) {
-    const fx = f.position.x * cellSize;
-    const fy = f.position.y * cellSize;
-    const pad = Math.floor(cellSize * 0.2);
+  for (const f of currentState.food) {
+    const fp = toScreen(f.x, f.y);
+    const r = Math.max(2, (f.value > 1 ? 9 : 6) * scale);
     ctx.fillStyle = f.value > 1 ? '#ff6b6b' : '#ffd43b';
+    ctx.globalAlpha = 0.8;
     ctx.beginPath();
-    ctx.arc(fx + cellSize/2, fy + cellSize/2, (cellSize - pad*2)/2, 0, Math.PI * 2);
+    ctx.arc(fp.x, fp.y, r, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.globalAlpha = 1.0;
 
   // Snakes
-  for (const snake of snakes) {
-    if (!snake.alive || snake.segments.length === 0) continue;
-
-    // Body segments
-    for (let i = 1; i < snake.segments.length; i++) {
-      const seg = snake.segments[i];
-      const pad = 1;
-      ctx.fillStyle = snake.color;
-      ctx.fillRect(seg.x * cellSize + pad, seg.y * cellSize + pad, cellSize - pad*2, cellSize - pad*2);
-    }
-
-    // Head (brighter)
-    const head = snake.segments[0];
-    ctx.fillStyle = lightenColor(snake.color, 40);
-    const pad = 1;
-    ctx.fillRect(head.x * cellSize + pad, head.y * cellSize + pad, cellSize - pad*2, cellSize - pad*2);
-
-    // Eyes
-    drawEyes(head, snake.direction, snake.color);
-
-    // Name label
-    ctx.font = `bold ${Math.max(10, cellSize * 0.7)}px sans-serif`;
-    ctx.fillStyle = '#fff';
-    ctx.textAlign = 'center';
-    ctx.shadowColor = 'rgba(0,0,0,0.8)';
-    ctx.shadowBlur = 4;
-    ctx.fillText(snake.participantName, head.x * cellSize + cellSize/2, head.y * cellSize - 4);
-    ctx.shadowBlur = 0;
+  for (const snake of currentState.snakes) {
+    if (!snake.alive || !snake.segments || snake.segments.length === 0) continue;
+    drawSnake(snake, t);
   }
 }
 
-function drawEyes(head, direction, color) {
-  const cx = head.x * cellSize + cellSize / 2;
-  const cy = head.y * cellSize + cellSize / 2;
-  const eyeSize = Math.max(2, cellSize * 0.15);
-  const offset = cellSize * 0.2;
+function drawSnake(snake, t) {
+  const segments = snake.segments;
+  const segCount = segments.length;
+  const baseRadius = 12 * scale;
 
-  let e1, e2;
-  switch (direction) {
-    case 'UP':    e1 = { x: cx - offset, y: cy - offset }; e2 = { x: cx + offset, y: cy - offset }; break;
-    case 'DOWN':  e1 = { x: cx - offset, y: cy + offset }; e2 = { x: cx + offset, y: cy + offset }; break;
-    case 'LEFT':  e1 = { x: cx - offset, y: cy - offset }; e2 = { x: cx - offset, y: cy + offset }; break;
-    case 'RIGHT': e1 = { x: cx + offset, y: cy - offset }; e2 = { x: cx + offset, y: cy + offset }; break;
-    default: return;
+  // Interpolate head position
+  const dx = Math.cos(snake.angle) * snake.speed * t;
+  const dy = Math.sin(snake.angle) * snake.speed * t;
+  const headInterp = toScreen(segments[0].x + dx, segments[0].y + dy);
+
+  // Draw body from tail to head (head on top)
+  for (let i = segCount - 1; i >= 1; i--) {
+    const seg = toScreen(segments[i].x, segments[i].y);
+    const taper = 0.6 + 0.4 * (i / (segCount - 1));
+    const r = Math.max(2, baseRadius * taper);
+
+    ctx.fillStyle = snake.color;
+    ctx.beginPath();
+    ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
+    ctx.fill();
   }
 
+  // Head (brighter, full size)
+  ctx.fillStyle = lightenColor(snake.color, 40);
+  ctx.beginPath();
+  ctx.arc(headInterp.x, headInterp.y, Math.max(3, baseRadius), 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eyes
+  drawEyes(headInterp.x, headInterp.y, snake.angle, baseRadius);
+
+  // Name label
+  ctx.font = `bold ${Math.max(10, Math.round(12 * scale * 8))}px sans-serif`;
   ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(e1.x, e1.y, eyeSize, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(e2.x, e2.y, eyeSize, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'center';
+  ctx.shadowColor = 'rgba(0,0,0,0.9)';
+  ctx.shadowBlur = 4;
+  ctx.fillText(snake.participantName, headInterp.x, headInterp.y - baseRadius - 6);
+  ctx.shadowBlur = 0;
+}
+
+function drawEyes(sx, sy, angle, baseRadius) {
+  const eyeOffset = baseRadius * 0.5;
+  const eyeSize = Math.max(1.5, baseRadius * 0.3);
+  const perpAngle = angle + Math.PI / 2;
+
+  const fwdX = Math.cos(angle) * eyeOffset * 0.5;
+  const fwdY = Math.sin(angle) * eyeOffset * 0.5;
+  const perpX = Math.cos(perpAngle) * eyeOffset;
+  const perpY = Math.sin(perpAngle) * eyeOffset;
+
+  const e1x = sx + fwdX + perpX;
+  const e1y = sy + fwdY + perpY;
+  const e2x = sx + fwdX - perpX;
+  const e2y = sy + fwdY - perpY;
+
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(e1x, e1y, eyeSize, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(e2x, e2y, eyeSize, 0, Math.PI * 2); ctx.fill();
+
+  const pupilSize = eyeSize * 0.5;
+  const pupilFwd = eyeSize * 0.3;
+  const px = Math.cos(angle) * pupilFwd;
+  const py = Math.sin(angle) * pupilFwd;
+
   ctx.fillStyle = '#000';
-  ctx.beginPath(); ctx.arc(e1.x, e1.y, eyeSize * 0.5, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(e2.x, e2.y, eyeSize * 0.5, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(e1x + px, e1y + py, pupilSize, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(e2x + px, e2y + py, pupilSize, 0, Math.PI * 2); ctx.fill();
 }
 
 function lightenColor(hex, amount) {
@@ -299,10 +332,8 @@ function lightenColor(hex, amount) {
 
 function updateLeaderboard() {
   if (!currentState) return;
-
   const sorted = [...currentState.snakes].sort((a, b) => b.totalScore - a.totalScore);
-
-  leaderboard.innerHTML = sorted.map((s, i) => `
+  leaderboard.innerHTML = sorted.map(s => `
     <div class="snake-row ${s.alive ? '' : 'dead'}">
       <div class="snake-color" style="background: ${s.color}"></div>
       <div class="snake-info">
@@ -320,7 +351,7 @@ function updateLeaderboard() {
 
 function formatDeathReason(reason) {
   if (!reason) return '';
-  if (reason === 'wall') return 'hit wall';
+  if (reason === 'boundary') return 'hit boundary';
   if (reason === 'self') return 'hit self';
   if (reason.startsWith('snake:')) return 'killed by ' + reason.slice(6);
   if (reason.startsWith('headon:')) return 'head-on with ' + reason.slice(7);
@@ -349,51 +380,32 @@ function addNotification(text, color = '#fff') {
   setTimeout(() => el.remove(), 3000);
 }
 
-// Socket.io connection
+// Socket.io
 const socket = io();
 
 socket.on('game:tick', (state) => {
   const firstUpdate = !currentState;
+  prevState = currentState;
   currentState = state;
+  lastTickTime = performance.now();
   if (firstUpdate) resizeCanvas();
+
   tickInfo.textContent = `Tick: ${state.tick}`;
   statusInfo.textContent = state.status.charAt(0).toUpperCase() + state.status.slice(1);
   spectatorInfo.textContent = `${state.spectatorCount} watching`;
-  render();
   updateLeaderboard();
 });
 
-socket.on('game:started', () => {
-  showOverlay('GO!', 1500);
-});
+socket.on('game:started', () => showOverlay('GO!', 1500));
+socket.on('game:paused', () => showOverlay('PAUSED'));
+socket.on('game:finished', (data) => showOverlay(`${data.winnerName || 'Nobody'} WINS!`, 5000));
+socket.on('snake:registered', (data) => addNotification(`${data.name} joined!`, data.color));
+socket.on('snake:died', (data) => addNotification(`${data.name} died: ${formatDeathReason(data.reason)}`, '#ff4444'));
+socket.on('snake:respawned', (data) => addNotification(`${data.name} respawned`, '#44ff44'));
+socket.on('connect', () => console.log('Connected to game server'));
+socket.on('disconnect', () => showOverlay('DISCONNECTED', 10000));
 
-socket.on('game:paused', () => {
-  showOverlay('PAUSED');
-});
-
-socket.on('game:finished', (data) => {
-  showOverlay(`${data.winnerName || 'Nobody'} WINS!`, 5000);
-});
-
-socket.on('snake:registered', (data) => {
-  addNotification(`${data.name} joined!`, data.color);
-});
-
-socket.on('snake:died', (data) => {
-  addNotification(`${data.name} died: ${formatDeathReason(data.reason)}`, '#ff4444');
-});
-
-socket.on('snake:respawned', (data) => {
-  addNotification(`${data.name} respawned`, '#44ff44');
-});
-
-socket.on('connect', () => {
-  console.log('Connected to game server');
-});
-
-socket.on('disconnect', () => {
-  showOverlay('DISCONNECTED', 10000);
-});
+requestAnimationFrame(render);
 </script>
 </body>
 </html>

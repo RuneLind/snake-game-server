@@ -1,6 +1,8 @@
 # Snake AI Arena
 
-A multiplayer snake game where participants submit JavaScript AI functions to control their snakes. Built for workshops teaching AI-assisted coding with Claude Code.
+A Slither.io-style multiplayer snake game where participants submit JavaScript AI functions to control their snakes. Built for workshops teaching AI-assisted coding with Claude Code.
+
+Snakes move continuously in a circular arena. AI functions return a target angle each tick. No grid, no tiles — smooth movement in any direction.
 
 ## Quick Start
 
@@ -21,7 +23,7 @@ Find your local IP: `ipconfig getifaddr en0` (macOS)
 ```bash
 curl -X POST http://HOST:3000/api/register \
   -H "Content-Type: application/json" \
-  -d '{"name": "YourName", "aiFunction": "function move(state) { return \"RIGHT\"; }"}'
+  -d '{"name": "YourName", "aiFunction": "function move(state) { return 0; }"}'
 ```
 
 **Update AI (kills and respawns your snake):**
@@ -40,49 +42,73 @@ curl -X POST http://HOST:3000/api/submit \
 ### Admin Endpoints
 
 ```bash
-# Start the game
 curl -X POST http://localhost:3000/api/admin/start
-
-# Pause
 curl -X POST http://localhost:3000/api/admin/pause
-
-# Reset (keeps registrations)
 curl -X POST http://localhost:3000/api/admin/reset
-
-# Kick a snake
 curl -X DELETE http://localhost:3000/api/admin/snake/SNAKE_ID
-
-# Change speed
 curl -X POST http://localhost:3000/api/admin/config \
   -H "Content-Type: application/json" \
-  -d '{"tickRateMs": 200}'
+  -d '{"tickRateMs": 80}'
 ```
-
-## Session Flow
-
-1. Start slow (`tickRateMs: 200`) while people get their first submission working
-2. Speed up to 150 once everyone has a moving snake
-3. Switch to tournament mode (`respawnOnDeath: false`) for the final round
 
 ## AI Function Contract
 
 ```javascript
 function move(state) {
-  // state.you       — { id, head, segments, direction, length, score }
-  // state.board     — { width, height }
-  // state.snakes    — [{ id, name, head, segments, direction, length, alive }]
-  // state.food      — [{ position: {x, y}, value }]
-  // state.tick      — current tick number
+  // state.you    — { id, x, y, angle, speed, segments, length, score }
+  // state.arena  — { radius } (circular arena centered at 0,0)
+  // state.snakes — [{ id, name, x, y, angle, segments, length, alive }]
+  // state.food   — [{ x, y, value }]
+  // state.tick   — current tick number
   //
-  // Return: "UP" | "DOWN" | "LEFT" | "RIGHT"
-  // Invalid return or error = snake continues straight
+  // Return: a number (target angle in radians)
+  //   0 = right, PI/2 = down, PI = left, 3*PI/2 = up
+  //
+  // Helper functions available:
+  //   angleTo(x1, y1, x2, y2) — angle from point 1 to point 2
+  //   distTo(x1, y1, x2, y2) — distance between two points
+  //   distFromCenter(x, y)   — distance from arena center
 
-  return "RIGHT";
+  return 0; // go right
 }
 ```
 
 ### Rules
 - 50ms execution limit (exceeded = go straight)
-- 180° reversals ignored
+- Snake turns toward target angle at ~4.6 degrees per tick
+- No self-collision (only die from other snakes or boundary)
 - Errors caught silently — snake goes straight
 - State is a deep copy — mutations have no effect
+
+### Starter AI
+
+```javascript
+function move(state) {
+  const { x, y, angle } = state.you;
+
+  // Stay away from boundary
+  if (distFromCenter(x, y) > state.arena.radius * 0.8) {
+    return angleTo(x, y, 0, 0);
+  }
+
+  // Find nearest food
+  let nearest = null;
+  let nearestDist = Infinity;
+  for (const f of state.food) {
+    const d = distTo(x, y, f.x, f.y);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearest = f;
+    }
+  }
+
+  if (nearest) return angleTo(x, y, nearest.x, nearest.y);
+  return angle;
+}
+```
+
+## Session Flow
+
+1. Start with default speed while people get their first submission working
+2. Increase `snakeSpeed` or decrease `tickRateMs` once everyone has a moving snake
+3. Switch to tournament mode (`respawnOnDeath: false`) for the final round

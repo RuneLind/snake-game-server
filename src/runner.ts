@@ -1,12 +1,12 @@
 import { config } from "./config.js";
-import type { Direction, AIInput } from "./types.js";
+import type { AIInput } from "./types.js";
 
 const WORKER_PATH = new URL("./ai-worker.ts", import.meta.url).href;
 
 export async function runAI(
   aiFunction: string,
   input: AIInput,
-): Promise<Direction | null> {
+): Promise<number | null> {
   return new Promise((resolve) => {
     const worker = new Worker(WORKER_PATH);
 
@@ -18,7 +18,7 @@ export async function runAI(
     worker.onmessage = (event: MessageEvent) => {
       clearTimeout(timer);
       worker.terminate();
-      resolve(event.data.direction ?? null);
+      resolve(event.data.targetAngle ?? null);
     };
 
     worker.onerror = () => {
@@ -33,11 +33,11 @@ export async function runAI(
 
 export async function runAllAIs(
   snakes: Array<{ id: string; aiFunction: string; input: AIInput }>,
-): Promise<Map<string, Direction | null>> {
-  const results = new Map<string, Direction | null>();
+): Promise<Map<string, number | null>> {
+  const results = new Map<string, number | null>();
   const promises = snakes.map(async ({ id, aiFunction, input }) => {
-    const direction = await runAI(aiFunction, input);
-    results.set(id, direction);
+    const targetAngle = await runAI(aiFunction, input);
+    results.set(id, targetAngle);
   });
   await Promise.all(promises);
   return results;
